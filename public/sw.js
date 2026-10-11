@@ -1,7 +1,7 @@
 // TeleCloud service worker: offline app shell + streaming previews.
 // Requests to ./stream/<id>/<name> are answered with byte ranges fetched (and decrypted) by the open page,
 // so videos and music can play instantly without downloading or caching the whole file.
-const SHELL = 'tc-shell-v3'
+const SHELL = 'tc-shell-v3.1'
 self.addEventListener('install', () => self.skipWaiting())
 self.addEventListener('activate', (e) => e.waitUntil((async () => {
   for (const k of await caches.keys()) if (k !== SHELL) await caches.delete(k)

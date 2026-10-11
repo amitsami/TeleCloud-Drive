@@ -726,3 +726,7 @@ html[data-theme=dark] .bdg{--bdg-ring:rgba(30,32,40,.9)}
   .hide-md{display:none}
 }
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+.cr .crx{opacity:.55;flex:none;width:30px;height:30px;transition:opacity .2s,background .2s,color .2s}
+.cr:hover .crx,.cr .crx:focus-visible{opacity:1}
+.cr .crx:hover{color:var(--red,#ef4444);background:color-mix(in srgb,var(--red,#ef4444) 12%,transparent)}
+.banner [data-occ]{margin-left:auto;flex:none}

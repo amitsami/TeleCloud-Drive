@@ -121,7 +121,7 @@ function ctxMenu(x, y, items) {
   const pinned = files.length && files.every((f) => S.cached.get(f.id)?.pin)
   const html = S.view === 'trash' ? B('restore', I.restore, 'Restore') + '<hr>' + B('purge', I.trash, 'Delete Forever', 'red')
     : (one ? (it.kind === 'folder' ? B('open', I.drive, 'Open', '', '↵') : B('preview', I.eye, 'Quick Preview', '', 'Space')) : '') +
-      (files.length ? B('download', I.download, files.length > 1 ? `Download ${files.length} Files` : 'Download') + B(pinned ? 'unpin' : 'pin', I.offline, pinned ? 'Remove Download' : 'Keep on This Device') + B('share', I.send, 'Send to Saved Messages') : '') + '<hr>' +
+      (files.length ? B('download', I.download, files.length > 1 ? `Download ${files.length} Files` : 'Download') + (pinned ? '' : B('pin', I.offline, 'Keep on This Device')) + (files.some((f) => S.cached.has(f.id)) ? B('unpin', I.broom, 'Delete from This Device') : '') + B('share', I.send, 'Send to Saved Messages') : '') + '<hr>' +
       (one && !it.locked ? B('rename', I.edit, 'Rename') : '') + B('move', I.move, 'Move to…') + (files.length ? B('fav', files.every((f) => f.fav) ? I.starFill : I.star, files.every((f) => f.fav) ? 'Remove from Favorites' : 'Add to Favorites') : '') +
       (one ? B('info', I.info, 'Get Info', '', '⌘I') : '') + (one && files.length && S.view !== 'drive' ? B('reveal', I.drive, 'Show in Folder') : '') + '<hr>' + B('delete', I.trash, 'Delete', 'red', '⌫')
   menu(x, y, html, (b) => act(b.dataset.ca, items, cardOf(it)))

@@ -71,11 +71,13 @@ function bind() {
 
   const c = $('#content'), sc = $('#scroller')
   let last = null
+  $('#cachel') && ($('#cachel').onclick = () => go({ view: 'settings' }, 'fwd'))
   c.onclick = (e) => {
     const a = e.target.closest('[data-a]')
     if (a) { const v = a.dataset.a; if (v === 'upload') { upFrom = centerOf(a); pick() } else if (v === 'newfolder' || v === 'newfolder-root') newFolder(); else if (v === 'empty') { const t = S.items.filter((i) => i.d); t.length && purge(t) } else if (v === 'unlock') unlockFlow(); else if (v === 'e2e') setupE2E().then(() => S.view === 'settings' && settingsView()); else if (v === 'lockv') { E.lock().then(() => { S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file'; S.thumbs.delete(i.id) } }); dropBlobs(); toast('Locked', 'lock'); render() }) } else if (v === 'e2epass') changePass(); else if (v === 'keys') showKeys(); return }
     const pz = e.target.closest('[data-pz]'); if (pz) { S.pz = Math.min(8, Math.max(2, S.pz - +pz.dataset.pz)); localStorage.setItem('tc.pz', S.pz); $$('.photos', c).forEach((p) => p.style.setProperty('--cols', pcols())); return }
     const cb = e.target.closest('[data-cat]'); if (cb) { go({ view: 'cat', cat: cb.dataset.cat }, 'fwd'); return }
+    if (e.target.closest('[data-occ]')) { (async () => { const l = await cache.list(); if (!(await confirmBox('Delete all cache?', `${fmtSize(l.reduce((a, b) => a + b.size, 0))} saved on this device will be removed. Your cloud files are not deleted.`, 'Delete cache', true))) return; await cache.clearAll(); S.thumbs.forEach((u) => URL.revokeObjectURL(u)); S.thumbs.clear(); dropBlobs(); S.cached.clear(); toast('Cache deleted · your cloud files are untouched'); updateCacheLabel(); render() })(); return }
     const v2 = e.target.closest('[data-v2]'); if (v2) { go({ view: v2.dataset.v2 }, 'fwd'); return }
     if (S.view === 'settings') return
     const mb = e.target.closest('[data-menu]')

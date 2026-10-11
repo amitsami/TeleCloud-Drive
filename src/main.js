@@ -201,7 +201,7 @@ function shell() {
         <button class="store-card" data-v="settings" data-sv="1">
           <div class="sc-top"><span class="sc-ic">${I.cloud}</span><div><div class="sc-t">Cloud Storage</div><div class="sc-s"><b id="used">0 B</b> used · Unlimited</div></div></div>
           <div class="sc-bar" id="scbar"></div>
-          <div class="sc-s" id="cachel">On this device: …</div>
+          <div class="sc-s" id="cachel" data-v2="settings" role="button" title="Manage storage" style="cursor:pointer">On this device: …</div>
         </button>
         <div class="acct"><div class="avatar">${esc((name[0] || 'T').toUpperCase())}</div><div style="min-width:0;flex:1"><div class="nm">${esc(name)}</div><div class="meta-s">${tg.me.username ? '@' + esc(tg.me.username) : 'Telegram account'}</div></div>
         <button class="iconbtn" id="logout" title="Sign out">${I.logout}</button></div>
@@ -320,7 +320,7 @@ function render() {
   else if (!vis.length) c.innerHTML = lockBanner + emptyState()
   else if (S.view === 'photos' && !S.q) c.innerHTML = photosView(vis)
   else if (S.view === 'trash' && !S.q) c.innerHTML = `<div class="banner glass-lite">${I.trash}<span>Items are permanently deleted after 30 days.</span><button class="btn ghost sm red" data-a="empty">Empty</button></div>` + list(vis)
-  else if (S.view === 'offline' && !S.q) c.innerHTML = `<div class="banner glass-lite">${I.device}<span>These files are saved on this device and open instantly, even offline.</span></div>` + list(vis)
+  else if (S.view === 'offline' && !S.q) c.innerHTML = `<div class="banner glass-lite">${I.device}<span>These files are saved on this device and open instantly, even offline. Deleting the cache never touches your cloud.</span>${vis.length ? `<button class="btn glassbtn sm" data-occ="1">${I.broom} Delete All Cache</button>` : ''}</div>` + list(vis)
   else c.innerHTML = lockBanner + list(vis)
   finish()
   function finish() { updateSel(); loadThumbs(); S.fresh.clear(); if (!doAnim) c.classList.remove('anim') }
@@ -409,10 +409,10 @@ function updateSel() {
   if (!sel.length) { sb.classList.remove('show'); return }
   const files = sel.filter((i) => i.kind === 'file' && !i.locked)
   const B = (a, ic, l, cls = '') => `<button class="sb ${cls}" data-a="${a}" title="${l}">${ic}<span>${l}</span></button>`
-  const allCached = files.length && files.every((f) => S.cached.get(f.id)?.pin)
+  const allCached = files.length && files.every((f) => S.cached.get(f.id)?.pin), anyCached = files.some((f) => S.cached.has(f.id))
   sb.innerHTML = `<span class="sb-n"><span><b>${sel.length}</b> selected</span>${files.length ? `<em>${fmtSize(files.reduce((a, b) => a + b.size, 0))}</em>` : ''}</span><span class="sb-div"></span>` + (S.view === 'trash'
     ? B('restore', I.restore, 'Restore') + B('purge', I.trash, 'Delete', 'red')
-    : (files.length === 1 && sel.length === 1 ? B('preview', I.eye, 'Preview') : '') + (files.length ? B('download', I.download, 'Download') : '') + (files.length ? B(allCached ? 'unpin' : 'pin', I.offline, allCached ? 'Remove Download' : 'Keep Offline') : '') +
+    : (files.length === 1 && sel.length === 1 ? B('preview', I.eye, 'Preview') : '') + (files.length ? B('download', I.download, 'Download') : '') + (files.length && !allCached ? B('pin', I.offline, 'Keep Offline') : '') + (anyCached ? B('unpin', I.broom, 'Delete Cache') : '') +
       B('move', I.move, 'Move') + (sel.length === 1 && !sel[0].locked ? B('rename', I.edit, 'Rename') : '') + (files.length ? B('fav', files.every((f) => f.fav) ? I.starFill : I.star, 'Favorite') : '') + B('delete', I.trash, 'Delete', 'red')) +
     `<span class="sb-div"></span><button class="sb x" data-a="clear" title="Done">${I.x}</button>`
   sb.classList.add('show')
@@ -431,7 +431,7 @@ async function settingsView() {
   S.cached = new Map(media.map((m) => [m.id, m]))
   const st = cache.settings()
   const byCat = {}; for (const k in cache.CATS) byCat[k] = { n: 0, size: 0 }
-  for (const m of media) { byCat[m.cat].n++; byCat[m.cat].size += m.size }
+  for (const m of media) { if (!byCat[m.cat]) m.cat = 'other'; byCat[m.cat].n++; byCat[m.cat].size += m.size }
   byCat.thumbs = { n: th.count, size: th.size }
   const total = Object.values(byCat).reduce((a, b) => a + b.size, 0)
   const rows = [...media.map((m) => ({ ...m, key: String(m.id) })), ...(th.count ? [{ key: 'thumbs', id: 'thumbs', name: 'Thumbnails & previews', size: th.size, cat: 'thumbs', used: Date.now(), n: th.count }] : [])].sort((a, b) => b.size - a.size)
@@ -463,11 +463,11 @@ async function settingsView() {
         const it = S.items.find((x) => x.id === r.id); const tu = S.thumbs.get(r.id)
         const ic = r.cat === 'thumbs' ? `<span class="ti" style="background:${cache.CATS.thumbs.color}">${I.photo}</span>` : tu ? `<img src="${tu}">` : fileIcon(r.name, 36)
         return `<label class="cr ${CS.sel.has(r.key) ? 'on' : ''}" style="--i:${Math.min(i, 20)}"><span class="chk"><input type="checkbox" data-ck="${esc(r.key)}" ${CS.sel.has(r.key) ? 'checked' : ''}><span></span></span>${ic}
-          <span class="cr-b"><span class="cr-n">${esc(it ? it.name : r.name)}${r.pin ? `<em class="pin">${I.offline} Kept offline</em>` : ''}</span><span class="cr-s">${r.cat === 'thumbs' ? `${r.n} small images` : `${cache.CATS[r.cat].label} · used ${fmtDate(r.used / 1000)}${it ? '' : ' · no longer in cloud'}`}</span></span><b>${fmtSize(r.size)}</b></label>`
+          <span class="cr-b"><span class="cr-n">${esc(it ? it.name : r.name)}${r.pin ? `<em class="pin">${I.offline} Kept offline</em>` : ''}</span><span class="cr-s">${r.cat === 'thumbs' ? `${r.n} small images` : `${cache.CATS[r.cat].label} · used ${fmtDate(r.used / 1000)}${it ? '' : ' · no longer in cloud'}`}</span></span><b>${fmtSize(r.size)}</b><button class="iconbtn crx" data-rm="${esc(r.key)}" title="Delete from this device">${I.trash}</button></label>`
       }).join('') : `<div class="cl-empty">${I.broom}<div>${rows.length ? 'Nothing cached in this category' : 'Nothing is stored on this device'}</div></div>`}</div>
-      <div class="cl-f"><span>${CS.sel.size ? `<b>${CS.sel.size}</b> selected · <b>${fmtSize(selSize)}</b>` : 'Select items to remove them from this device'}</span>
-        <button class="btn glassbtn sm" id="clrall" ${total ? '' : 'disabled'}>Clear All</button>
-        <button class="btn primary sm" id="clrsel" ${CS.sel.size ? '' : 'disabled'}>${I.broom} Clear ${CS.sel.size ? fmtSize(selSize) : 'Selected'}</button></div>
+      <div class="cl-f"><span>${CS.sel.size ? `<b>${CS.sel.size}</b> selected · <b>${fmtSize(selSize)}</b>` : 'Select items, or tap 🗑 to delete a cached file from this device'}</span>
+        <button class="btn glassbtn sm" id="clrall" ${total ? '' : 'disabled'}>Delete All Cache</button>
+        <button class="btn primary sm" id="clrsel" ${CS.sel.size ? '' : 'disabled'}>${I.broom} Delete ${CS.sel.size ? fmtSize(selSize) : 'Selected'}</button></div>
     </div>
 
     <div class="set-h"><h2>Cache</h2></div>
@@ -511,6 +511,12 @@ async function settingsView() {
   $$('.segc', c).forEach(placeSeg)
   c.querySelectorAll('[data-f]').forEach((b) => (b.onclick = (e) => { e.preventDefault(); CS.filter = CS.filter === b.dataset.f && b.classList.contains('lg') ? 'all' : b.dataset.f; settingsView() }))
   c.querySelectorAll('[data-ck]').forEach((i) => (i.onchange = () => { i.checked ? CS.sel.add(i.dataset.ck) : CS.sel.delete(i.dataset.ck); settingsView() }))
+  c.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = async (e) => {
+    e.preventDefault(); e.stopPropagation(); const k = b.dataset.rm; const r = rows.find((x) => x.key === k)
+    b.closest('.cr').classList.add('leaving'); await sleep(260)
+    if (k === 'thumbs') { await cache.clearThumbs(); S.thumbs.forEach((u) => URL.revokeObjectURL(u)); S.thumbs.clear() } else { await cache.remove([Number(k)]); dropBlobs([Number(k)]) }
+    CS.sel.delete(k); toast(`Deleted ${fmtSize(r ? r.size : 0)} from this device · cloud file is safe`); settingsView(); updateCacheLabel()
+  }))
   $('#csall', c).onchange = (e) => { shown.forEach((r) => (e.target.checked ? CS.sel.add(r.key) : CS.sel.delete(r.key))); settingsView() }
   $('#clrsel', c).onclick = async () => {
     const keys = [...CS.sel]; const ids = keys.filter((k) => k !== 'thumbs').map(Number)
@@ -998,7 +1004,7 @@ function ctxMenu(x, y, items) {
   const pinned = files.length && files.every((f) => S.cached.get(f.id)?.pin)
   const html = S.view === 'trash' ? B('restore', I.restore, 'Restore') + '<hr>' + B('purge', I.trash, 'Delete Forever', 'red')
     : (one ? (it.kind === 'folder' ? B('open', I.drive, 'Open', '', '↵') : B('preview', I.eye, 'Quick Preview', '', 'Space')) : '') +
-      (files.length ? B('download', I.download, files.length > 1 ? `Download ${files.length} Files` : 'Download') + B(pinned ? 'unpin' : 'pin', I.offline, pinned ? 'Remove Download' : 'Keep on This Device') + B('share', I.send, 'Send to Saved Messages') : '') + '<hr>' +
+      (files.length ? B('download', I.download, files.length > 1 ? `Download ${files.length} Files` : 'Download') + (pinned ? '' : B('pin', I.offline, 'Keep on This Device')) + (files.some((f) => S.cached.has(f.id)) ? B('unpin', I.broom, 'Delete from This Device') : '') + B('share', I.send, 'Send to Saved Messages') : '') + '<hr>' +
       (one && !it.locked ? B('rename', I.edit, 'Rename') : '') + B('move', I.move, 'Move to…') + (files.length ? B('fav', files.every((f) => f.fav) ? I.starFill : I.star, files.every((f) => f.fav) ? 'Remove from Favorites' : 'Add to Favorites') : '') +
       (one ? B('info', I.info, 'Get Info', '', '⌘I') : '') + (one && files.length && S.view !== 'drive' ? B('reveal', I.drive, 'Show in Folder') : '') + '<hr>' + B('delete', I.trash, 'Delete', 'red', '⌫')
   menu(x, y, html, (b) => act(b.dataset.ca, items, cardOf(it)))
@@ -1230,11 +1236,13 @@ function bind() {
 
   const c = $('#content'), sc = $('#scroller')
   let last = null
+  $('#cachel') && ($('#cachel').onclick = () => go({ view: 'settings' }, 'fwd'))
   c.onclick = (e) => {
     const a = e.target.closest('[data-a]')
     if (a) { const v = a.dataset.a; if (v === 'upload') { upFrom = centerOf(a); pick() } else if (v === 'newfolder' || v === 'newfolder-root') newFolder(); else if (v === 'empty') { const t = S.items.filter((i) => i.d); t.length && purge(t) } else if (v === 'unlock') unlockFlow(); else if (v === 'e2e') setupE2E().then(() => S.view === 'settings' && settingsView()); else if (v === 'lockv') { E.lock().then(() => { S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file'; S.thumbs.delete(i.id) } }); dropBlobs(); toast('Locked', 'lock'); render() }) } else if (v === 'e2epass') changePass(); else if (v === 'keys') showKeys(); return }
     const pz = e.target.closest('[data-pz]'); if (pz) { S.pz = Math.min(8, Math.max(2, S.pz - +pz.dataset.pz)); localStorage.setItem('tc.pz', S.pz); $$('.photos', c).forEach((p) => p.style.setProperty('--cols', pcols())); return }
     const cb = e.target.closest('[data-cat]'); if (cb) { go({ view: 'cat', cat: cb.dataset.cat }, 'fwd'); return }
+    if (e.target.closest('[data-occ]')) { (async () => { const l = await cache.list(); if (!(await confirmBox('Delete all cache?', `${fmtSize(l.reduce((a, b) => a + b.size, 0))} saved on this device will be removed. Your cloud files are not deleted.`, 'Delete cache', true))) return; await cache.clearAll(); S.thumbs.forEach((u) => URL.revokeObjectURL(u)); S.thumbs.clear(); dropBlobs(); S.cached.clear(); toast('Cache deleted · your cloud files are untouched'); updateCacheLabel(); render() })(); return }
     const v2 = e.target.closest('[data-v2]'); if (v2) { go({ view: v2.dataset.v2 }, 'fwd'); return }
     if (S.view === 'settings') return
     const mb = e.target.closest('[data-menu]')
