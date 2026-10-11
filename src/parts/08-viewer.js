@@ -34,17 +34,19 @@ function viewer(it, srcEl) {
   const el = document.createElement('div'); el.className = 'viewer'; document.body.append(el)
   el.innerHTML = `<div class="vbg"></div>
     <div class="vbar glass"><button class="iconbtn" id="vx" title="Close">${I.x}</button><div class="vt"><div class="vn" id="vn"></div><div class="vs" id="vsub"></div></div>
-      <div class="vacts"><button class="iconbtn" id="vfav" title="Favorite"></button><button class="iconbtn" id="vpin" title="Keep on this device">${I.offline}</button><button class="iconbtn hide-s" id="vsh" title="Send to Saved Messages">${I.send}</button><button class="iconbtn" id="vdl" title="Download">${I.download}</button><button class="iconbtn hide-s" id="vinfo" title="Info">${I.info}</button><button class="iconbtn hide-s red" id="vdel" title="Delete">${I.trash}</button></div></div>
+      <div class="vacts"><button class="iconbtn hidden" id="vplay" title="Slideshow">${I.slides}</button><button class="iconbtn" id="vfav" title="Favorite"></button><button class="iconbtn" id="vpin" title="Keep on this device">${I.offline}</button><button class="iconbtn hide-s" id="vsh" title="Send to Saved Messages">${I.send}</button><button class="iconbtn" id="vdl" title="Download">${I.download}</button><button class="iconbtn hide-s" id="vinfo" title="Info">${I.info}</button><button class="iconbtn hide-s red" id="vdel" title="Delete">${I.trash}</button></div></div>
     <div class="stage" id="vst"></div>
     <button class="vnav l glass" id="vl">${I.back}</button><button class="vnav r glass" id="vr">${I.fwd}</button>
     <div class="vcount glass" id="vc"></div>`
-  let ctl = {}, urlNow = null
+  let ctl = {}, urlNow = null, slide = null
+  const stopSlide = () => { if (slide) { clearInterval(slide); slide = null; $('#vplay', el)?.classList.remove('on') } }
+  const nextImg = () => { for (let i = idx + 1; i < list.length; i++) if (isImg(list[i])) return i; return -1 }
   const stage = $('#vst', el)
   const origin = () => { const r = srcEl && srcEl.isConnected ? srcEl.getBoundingClientRect() : null; return r ? `${r.left + r.width / 2}px ${r.top + r.height / 2}px` : '50% 50%' }
   stage.style.transformOrigin = origin()
   requestAnimationFrame(() => el.classList.add('in'))
   const close = () => {
-    if (el._closing) return; el._closing = true; ctl.cancelled = true
+    if (el._closing) return; el._closing = true; ctl.cancelled = true; stopSlide()
     const cur = list[idx]; const src = cardOf(cur); if (src) srcEl = src
     stage.style.transformOrigin = origin(); el.classList.remove('in'); el.classList.add('out')
     document.removeEventListener('keydown', onKey)
@@ -54,6 +56,7 @@ function viewer(it, srcEl) {
   const onKey = (e) => { if (document.querySelector('.modal-bg')) return; if (e.key === 'Escape' || (e.key === ' ' && !e.target.closest('video,audio'))) { e.preventDefault(); close() } if (e.key === 'ArrowRight') go2(1); if (e.key === 'ArrowLeft') go2(-1) }
   document.addEventListener('keydown', onKey)
   const go2 = (d) => { const n = idx + d; if (n < 0 || n >= list.length) return; idx = n; stage.dataset.dir = d > 0 ? 'r' : 'l'; show() }
+  $('#vplay', el).onclick = () => { if (slide) { stopSlide(); toast('Slideshow stopped', '', 1400); return } $('#vplay', el).classList.add('on'); toast('Slideshow · tap again to stop', '', 1600); slide = setInterval(() => { const n = nextImg(); if (n < 0) return stopSlide(); stage.dataset.dir = 'r'; idx = n; show() }, 3500) }
   $('#vx', el).onclick = close; $('#vl', el).onclick = () => go2(-1); $('#vr', el).onclick = () => go2(1)
   $('.vbg', el).onclick = close
   $('#vdl', el).onclick = (e) => download([list[idx]], e.currentTarget)
@@ -67,6 +70,7 @@ function viewer(it, srcEl) {
     $('#vn', el).textContent = f.name
     $('#vfav', el).innerHTML = f.fav ? I.starFill : I.star; $('#vfav', el).classList.toggle('gold', !!f.fav)
     $('#vpin', el).classList.toggle('on', !!c?.pin); $('#vpin', el).title = c?.pin ? 'Remove from this device' : 'Keep on this device'
+    $('#vplay', el).classList.toggle('hidden', !(isImg(f) && list.filter(isImg).length > 1))
     $('#vl', el).classList.toggle('hidden', idx <= 0); $('#vr', el).classList.toggle('hidden', idx >= list.length - 1)
     $('#vc', el).textContent = list.length > 1 ? `${idx + 1} of ${list.length}` : ''; $('#vc', el).classList.toggle('hidden', list.length < 2)
   }
@@ -113,6 +117,7 @@ function viewer(it, srcEl) {
         stage.innerHTML = isVid(f) ? `<video src="${url}" controls autoplay playsinline ${th ? `poster="${th}"` : ''}></video>`
           : `<div class="aud glass">${th ? `<img src="${th}">` : `<div class="aud-art">${I.music}</div>`}<div class="aud-n">${esc(f.name)}</div><div class="aud-s">${fmtSize(f.size)}${f.duration ? ' · ' + fmtDur(f.duration) : ''}</div><audio src="${url}" controls autoplay></audio></div>`
         const media = $('video,audio', stage)
+        media.onended = () => { if (!isAud(f)) return; for (let i = idx + 1; i < list.length; i++) if (isAud(list[i])) { idx = i; stage.dataset.dir = 'r'; show(); return } }
         media.onerror = () => { if (my.cancelled) return; stage.innerHTML = unsupported(f, "This format can't be played in the browser.") ; bindUns() }
         setSub(mode); return
       }
@@ -125,7 +130,9 @@ function viewer(it, srcEl) {
         if (url) txt = await (await fetch(url)).text()
         else { loading(f); const n = Math.min(f.size, 512 * 1024); const u8 = f.size ? await tg.readRange(f, 0, n - 1, my) : new Uint8Array(); if (my.cancelled) return; txt = new TextDecoder().decode(u8) + (f.size > n ? '\n\n… (preview shows the first 512 KB)' : ''); mode = 'memory' }
         const lines = txt.split('\n').slice(0, 20000)
-        stage.innerHTML = `<div class="code glass"><pre>${lines.map((l) => `<code>${esc(l) || ' '}</code>`).join('')}</pre></div>`; setSub(mode); return
+        stage.innerHTML = `<div class="code glass">${f.size < 2097152 ? `<button class="btn glassbtn sm ed-btn" id="vedit">${I.note} Edit</button>` : ''}<pre>${lines.map((l) => `<code>${esc(l) || ' '}</code>`).join('')}</pre></div>`; setSub(mode)
+        const eb = $('#vedit', stage); if (eb) eb.onclick = () => editText(f, (nu) => { list[idx] = nu; show() })
+        return
       }
       stage.innerHTML = unsupported(f); bindUns(); setSub(mode)
     } catch (e) { if (!my.cancelled) { stage.innerHTML = unsupported(f, `Couldn't load preview: ${errMsg(e)}`); bindUns() } }

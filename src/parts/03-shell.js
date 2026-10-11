@@ -147,7 +147,7 @@ function render() {
   if (S.view === 'recents' && !S.q) { c.innerHTML = lockBanner + homeView(vis) }
   else if (!vis.length) c.innerHTML = lockBanner + emptyState()
   else if (S.view === 'photos' && !S.q) c.innerHTML = photosView(vis)
-  else if (S.view === 'trash' && !S.q) c.innerHTML = `<div class="banner glass-lite">${I.trash}<span>Items are permanently deleted after 30 days.</span><button class="btn ghost sm red" data-a="empty">Empty</button></div>` + list(vis)
+  else if (S.view === 'trash' && !S.q) c.innerHTML = `<div class="banner glass-lite">${I.trash}<span>Items are permanently deleted after 30 days.</span><span class="grow"></span><button class="btn ghost sm" data-a="restoreall">${I.restore} Restore All</button><button class="btn ghost sm red" data-a="empty">Empty</button></div>` + list(vis)
   else if (S.view === 'offline' && !S.q) c.innerHTML = `<div class="banner glass-lite">${I.device}<span>These files are saved on this device and open instantly, even offline. Deleting the cache never touches your cloud.</span>${vis.length ? `<button class="btn glassbtn sm" data-occ="1">${I.broom} Delete All Cache</button>` : ''}</div>` + list(vis)
   else c.innerHTML = lockBanner + list(vis)
   finish()
@@ -240,7 +240,7 @@ function updateSel() {
   const allCached = files.length && files.every((f) => S.cached.get(f.id)?.pin), anyCached = files.some((f) => S.cached.has(f.id))
   sb.innerHTML = `<span class="sb-n"><span><b>${sel.length}</b> selected</span>${files.length ? `<em>${fmtSize(files.reduce((a, b) => a + b.size, 0))}</em>` : ''}</span><span class="sb-div"></span>` + (S.view === 'trash'
     ? B('restore', I.restore, 'Restore') + B('purge', I.trash, 'Delete', 'red')
-    : (files.length === 1 && sel.length === 1 ? B('preview', I.eye, 'Preview') : '') + (files.length ? B('download', I.download, 'Download') : '') + (files.length && !allCached ? B('pin', I.offline, 'Keep Offline') : '') + (anyCached ? B('unpin', I.broom, 'Delete Cache') : '') +
+    : (files.length === 1 && sel.length === 1 ? B('preview', I.eye, 'Preview') : '') + (files.length ? B('download', I.download, 'Download') : '') + (sel.some((i) => i.kind === 'folder') || files.length > 1 ? B('zip', I.zip, 'ZIP') : '') + (files.length && !allCached ? B('pin', I.offline, 'Keep Offline') : '') + (anyCached ? B('unpin', I.broom, 'Delete Cache') : '') + B('dup', I.copy, 'Duplicate') +
       B('move', I.move, 'Move') + (sel.length === 1 && !sel[0].locked ? B('rename', I.edit, 'Rename') : '') + (files.length ? B('fav', files.every((f) => f.fav) ? I.starFill : I.star, 'Favorite') : '') + B('delete', I.trash, 'Delete', 'red')) +
     `<span class="sb-div"></span><button class="sb x" data-a="clear" title="Done">${I.x}</button>`
   sb.classList.add('show')

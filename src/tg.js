@@ -24,7 +24,7 @@ export async function initClient() {
   const s = localStorage.getItem(LS_SESSION) || ''
   client = new TelegramClient(new StringSession(s), API_ID, API_HASH, {
     connectionRetries: 10, useWSS: true, autoReconnect: true,
-    deviceModel: 'TeleCloud Web', appVersion: '3.0', systemVersion: navigator.platform || 'Web',
+    deviceModel: 'TeleCloud Web', appVersion: '3.5', systemVersion: navigator.platform || 'Web',
   })
   client.setLogLevel('none')
   await client.connect()
@@ -178,7 +178,10 @@ async function caption(it) {
   if (it.fav) meta.f = 1
   if (it.d) meta.d = it.d
   if (it.t || it.date) meta.t = it.t || it.date
-  return `${it.enc ? '🔒 Encrypted file' : it.name}\n${META}${JSON.stringify(meta)}`
+  const head = it.enc ? '🔒 Encrypted file' : it.name.length > 120 ? it.name.slice(0, 117) + '…' : it.name
+  const out = `${head}\n${META}${JSON.stringify(meta)}`
+  if (out.length > 1024) throw new Error('That name or folder path is too long for Telegram')
+  return out
 }
 /** Decrypt an encrypted item's metadata in place (vault must be unlocked). */
 export async function openItem(it, thumbMsgs) {
@@ -219,7 +222,24 @@ export async function createFolder(path) {
 }
 export async function editItem(it) {
   const message = it.kind === 'folder' ? folderText(it) : await caption(it)
-  await call(new Api.messages.EditMessage({ peer, id: it.id, message, noWebpage: true }))
+  try { await call(new Api.messages.EditMessage({ peer, id: it.id, message, noWebpage: true })) }
+  catch (e) { if (e.errorMessage !== 'MESSAGE_NOT_MODIFIED') throw e }
+}
+/** Make a server-side copy of a file (no re-upload). patch = { name, path } */
+export async function copyItem(it, patch = {}) {
+  const r = await call(new Api.messages.ForwardMessages({ fromPeer: peer, id: [it.id], toPeer: peer, randomId: [generateRandomLong()], dropAuthor: true, silent: true }))
+  const m = newMsgFrom(r); if (!m) throw new Error('Copy failed')
+  const out = { ...it, id: m.id, msg: m, fav: false, d: 0, date: m.date, ...patch }
+  delete out.x; await editItem(out)
+  return out
+}
+/** Replace a file's contents: upload the new version, then remove the old message. */
+export async function replaceFile(it, file) {
+  const out = await uploadFile(file, it.path, { encrypt: !!it.enc, name: it.name })
+  if (!out) throw new Error('Upload failed')
+  if (it.fav) { out.fav = true; await editItem(out) }
+  await deleteIds([it.id])
+  return out
 }
 export async function deleteIds(ids) {
   for (let i = 0; i < ids.length; i += 100)
@@ -266,7 +286,8 @@ async function uploadParts(file, onProgress, ctl, sec) {
              : new Api.InputFile({ id: fileId, parts, name: file.name, md5Checksum: '' })
 }
 
-export async function uploadFile(file, path, { onProgress, ctl, thumb, video, encrypt } = {}) {
+export async function uploadFile(file, path, { onProgress, ctl, thumb, video, encrypt, name } = {}) {
+  const fname = name || file.name
   const t = Math.floor((file.lastModified || Date.now()) / 1000)
   if (encrypt) {
     const sec = E.newFileSecrets()
@@ -280,7 +301,7 @@ export async function uploadFile(file, path, { onProgress, ctl, thumb, video, en
       } catch {}
     }
     const inputFile = await uploadParts(file, onProgress, ctl, sec)
-    const it = { enc: true, sec, name: file.name, mime: file.type || 'application/octet-stream', duration: video ? video.duration : 0, path, t }
+    const it = { enc: true, sec, name: fname, mime: file.type || 'application/octet-stream', duration: video ? video.duration : 0, path, t }
     const media = new Api.InputMediaUploadedDocument({ file: inputFile, mimeType: 'application/octet-stream', attributes: [new Api.DocumentAttributeFilename({ fileName: 'encrypted.bin' })], forceFile: true })
     const r = await call(new Api.messages.SendMedia({ peer, media, message: await caption(it), randomId: generateRandomLong(), silent: true }))
     const out = parse(newMsgFrom(r))
@@ -290,9 +311,9 @@ export async function uploadFile(file, path, { onProgress, ctl, thumb, video, en
   const inputFile = await uploadParts(file, onProgress, ctl)
   let thumbFile
   if (thumb) { try { thumbFile = await uploadParts(new File([thumb], 'thumb.jpg', { type: 'image/jpeg' })) } catch {} }
-  const attributes = [new Api.DocumentAttributeFilename({ fileName: file.name })]
+  const attributes = [new Api.DocumentAttributeFilename({ fileName: fname })]
   if (video) attributes.push(new Api.DocumentAttributeVideo({ duration: video.duration || 0, w: video.w || 0, h: video.h || 0, supportsStreaming: true }))
-  const it = { name: file.name, path, t }
+  const it = { name: fname, path, t }
   const media = new Api.InputMediaUploadedDocument({
     file: inputFile, thumb: thumbFile, mimeType: file.type || 'application/octet-stream', attributes,
     forceFile: !video,

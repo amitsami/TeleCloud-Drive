@@ -319,7 +319,7 @@ function render() {
   if (S.view === 'recents' && !S.q) { c.innerHTML = lockBanner + homeView(vis) }
   else if (!vis.length) c.innerHTML = lockBanner + emptyState()
   else if (S.view === 'photos' && !S.q) c.innerHTML = photosView(vis)
-  else if (S.view === 'trash' && !S.q) c.innerHTML = `<div class="banner glass-lite">${I.trash}<span>Items are permanently deleted after 30 days.</span><button class="btn ghost sm red" data-a="empty">Empty</button></div>` + list(vis)
+  else if (S.view === 'trash' && !S.q) c.innerHTML = `<div class="banner glass-lite">${I.trash}<span>Items are permanently deleted after 30 days.</span><span class="grow"></span><button class="btn ghost sm" data-a="restoreall">${I.restore} Restore All</button><button class="btn ghost sm red" data-a="empty">Empty</button></div>` + list(vis)
   else if (S.view === 'offline' && !S.q) c.innerHTML = `<div class="banner glass-lite">${I.device}<span>These files are saved on this device and open instantly, even offline. Deleting the cache never touches your cloud.</span>${vis.length ? `<button class="btn glassbtn sm" data-occ="1">${I.broom} Delete All Cache</button>` : ''}</div>` + list(vis)
   else c.innerHTML = lockBanner + list(vis)
   finish()
@@ -412,7 +412,7 @@ function updateSel() {
   const allCached = files.length && files.every((f) => S.cached.get(f.id)?.pin), anyCached = files.some((f) => S.cached.has(f.id))
   sb.innerHTML = `<span class="sb-n"><span><b>${sel.length}</b> selected</span>${files.length ? `<em>${fmtSize(files.reduce((a, b) => a + b.size, 0))}</em>` : ''}</span><span class="sb-div"></span>` + (S.view === 'trash'
     ? B('restore', I.restore, 'Restore') + B('purge', I.trash, 'Delete', 'red')
-    : (files.length === 1 && sel.length === 1 ? B('preview', I.eye, 'Preview') : '') + (files.length ? B('download', I.download, 'Download') : '') + (files.length && !allCached ? B('pin', I.offline, 'Keep Offline') : '') + (anyCached ? B('unpin', I.broom, 'Delete Cache') : '') +
+    : (files.length === 1 && sel.length === 1 ? B('preview', I.eye, 'Preview') : '') + (files.length ? B('download', I.download, 'Download') : '') + (sel.some((i) => i.kind === 'folder') || files.length > 1 ? B('zip', I.zip, 'ZIP') : '') + (files.length && !allCached ? B('pin', I.offline, 'Keep Offline') : '') + (anyCached ? B('unpin', I.broom, 'Delete Cache') : '') + B('dup', I.copy, 'Duplicate') +
       B('move', I.move, 'Move') + (sel.length === 1 && !sel[0].locked ? B('rename', I.edit, 'Rename') : '') + (files.length ? B('fav', files.every((f) => f.fav) ? I.starFill : I.star, 'Favorite') : '') + B('delete', I.trash, 'Delete', 'red')) +
     `<span class="sb-div"></span><button class="sb x" data-a="clear" title="Done">${I.x}</button>`
   sb.classList.add('show')
@@ -426,7 +426,7 @@ const segc = (name, opts, cur) => `<div class="seg glass-inset segc" data-set="$
 const sw = (id, on) => `<label class="sw"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span></span></label>`
 async function settingsView() {
   const c = $('#content')
-  const [media, th, est] = await Promise.all([cache.list(), cache.thumbStats(), cache.estimate()])
+  const [media, th, est, pst] = await Promise.all([cache.list(), cache.thumbStats(), cache.storageDetails(), cache.persisted()])
   if (S.view !== 'settings') return
   S.cached = new Map(media.map((m) => [m.id, m]))
   const st = cache.settings()
@@ -441,7 +441,10 @@ async function settingsView() {
   const allSel = shown.length && shown.every((r) => CS.sel.has(r.key))
   const cloud = catStats(), cloudTotal = Object.values(cloud).reduce((a, b) => a + b.size, 0)
   const theme = localStorage.getItem('tc.theme') || 'auto'
-  const quota = est.quota ? `<div class="quota"><div class="q-row"><span>Browser storage used</span><b>${fmtSize(est.usage || 0)} of ${fmtSize(est.quota)}</b></div><div class="prog"><i style="width:${Math.min(100, ((est.usage || 0) / est.quota) * 100)}%"></i></div></div>` : ''
+  const oth = Math.max(0, est.usage - (est.idb ?? total) - (est.caches || 0))
+  const quota = `<div class="quota"><div class="q-row"><span>Browser storage used</span><b>${fmtSize(est.usage)}${est.quota ? ` of ${fmtSize(est.quota)}` : ''}</b></div><div class="prog"><i style="width:${est.quota ? Math.max(1, Math.min(100, (est.usage / est.quota) * 100)) : 0}%"></i></div>
+    <div class="q-det"><span><i style="background:#34A3F5"></i>Cached files ${fmtSize(est.idb ?? total)}</span><span><i style="background:#8B5CF6"></i>App files ${fmtSize(est.caches || 0)}</span>${oth > 1024 ? `<span><i style="background:#94A3B8"></i>Other ${fmtSize(oth)}</span>` : ''}</div>
+    <button class="btn glassbtn sm q-wipe" id="bwipe">${I.broom} Clean Up Browser Storage</button></div>`
   const v = tg.vault, unl = E.unlocked(), encN = S.items.filter((i) => i.enc).length
   const e2e = !v ? `<div class="e2e-card off"><span class="e2e-ic">${I.lock}</span><div><b>End-to-end encryption is off</b><span>Encrypt files in this browser before they're uploaded. Names, contents and thumbnails become unreadable to anyone without your passphrase — including Telegram.</span></div><button class="btn primary" data-a="e2e">Set up</button></div>`
     : `<div class="e2e-card on ${unl ? '' : 'lk'}"><span class="e2e-ic">${unl ? I.unlock : I.lock}</span><div><b>${unl ? 'Encryption is on · Unlocked on this device' : 'Encryption is on · Locked'}</b><span>${encN} encrypted file${encN === 1 ? '' : 's'} · AES-256 · Your passphrase never leaves this device.</span></div>${unl ? `<button class="btn glassbtn sm" data-a="lockv">${I.lock} Lock</button>` : `<button class="btn primary sm" data-a="unlock">${I.unlock} Unlock</button>`}</div>
@@ -475,6 +478,7 @@ async function settingsView() {
       <div class="srow"><div><b>Keep media</b><span>Cached files you haven't used for this long are removed automatically. Files kept offline are never removed.</span></div>${segc('keep', KEEP, st.keep)}</div>
       <div class="srow"><div><b>Maximum cache size</b><span>When full, the least recently used files are removed first.</span></div>${segc('max', MAXS, st.max)}</div>
       <div class="srow"><div><b>Keep downloaded files</b><span>Save a copy of files you download, so the next open is instant.</span></div>${sw('cauto', st.auto)}</div>
+      <div class="srow"><div><b>Protect from browser cleanup</b><span>Ask the browser not to delete your cached files when space is low.</span></div>${sw('cpersist', pst)}</div>
       <div class="srow"><div><b>Keep previewed files</b><span>Off: previews stream straight from the cloud and leave nothing behind on this device.</span></div>${sw('cprev', st.prev)}</div>
     </div>
 
@@ -486,6 +490,10 @@ async function settingsView() {
       <div class="cloud-t"><b>${fmtSize(cloudTotal)}</b><span>used · Unlimited</span></div>
       <div class="cbar">${cloudBar(cloud, cloudTotal) || '<i style="width:100%;background:var(--track)"></i>'}</div>
       <div class="cleg">${Object.entries(cloud).map(([k, v]) => `<span><i style="background:${CATV[k][2]}"></i>${CATV[k][0]} <b>${fmtSize(v.size)}</b></span>`).join('')}</div>
+    </div>
+    <div class="panel mat rows">
+      <div class="srow"><div><b>Find duplicates</b><span>Files with the same name and size. Free up clutter in one tap.</span></div><button class="btn glassbtn sm" data-a="dups">${I.copy} Find</button></div>
+      <div class="srow"><div><b>Refresh from cloud</b><span>Reload the file list from your Telegram channel.</span></div><button class="btn glassbtn sm" data-a="reload">${I.refresh} Refresh</button></div>
     </div>
 
     <div class="set-h"><h2>Appearance</h2></div>
@@ -505,7 +513,7 @@ async function settingsView() {
     <div class="set-h"><h2>Account</h2></div>
     <div class="panel mat rows">
       <div class="srow"><div class="acc"><div class="avatar lg">${esc((uname()[0] || 'T').toUpperCase())}</div><div><b>${esc(uname())}</b><span>${tg.me.username ? '@' + esc(tg.me.username) : ''}${tg.me.phone ? ' · +' + esc(tg.me.phone) : ''}</span></div></div><button class="btn glassbtn sm red" id="slogout">${I.logout} Sign out</button></div>
-      <div class="srow"><div><b>About TeleCloud</b><span>Version 3.0 · Open source · Runs entirely in your browser</span></div><a class="btn glassbtn sm" href="https://github.com/amitsami/TeleCloud-Drive" target="_blank" rel="noopener">${I.github} GitHub</a></div>
+      <div class="srow"><div><b>About TeleCloud</b><span>Version 3.5 · Open source · Runs entirely in your browser</span></div><a class="btn glassbtn sm" href="https://github.com/amitsami/TeleCloud-Drive" target="_blank" rel="noopener">${I.github} GitHub</a></div>
     </div>
   </div>`
   $$('.segc', c).forEach(placeSeg)
@@ -539,6 +547,8 @@ async function settingsView() {
     setTimeout(() => { settingsView(); updateCacheLabel() }, 260)
   })
   $('#cauto', c).onchange = (e) => cache.setSettings({ auto: e.target.checked })
+  $('#cpersist', c).onchange = async (e) => { if (e.target.checked) { const ok = await cache.persist(); e.target.checked = ok; toast(ok ? 'Cached files are protected from browser cleanup' : 'Your browser declined — install the app or bookmark it, then try again', ok ? '' : 'red') } else toast('Browsers only allow turning this off by clearing site data', '', 3500) }
+  $('#bwipe', c).onclick = () => wipeFlow(est.usage)
   $('#cprev', c).onchange = (e) => cache.setSettings({ prev: e.target.checked })
   $('#solid', c).onchange = (e) => { localStorage.setItem('tc.solid', e.target.checked ? '1' : '0'); applyTheme() }
   $('#still', c).onchange = (e) => { localStorage.setItem('tc.still', e.target.checked ? '1' : '0'); applyTheme() }
@@ -552,6 +562,24 @@ function themeReveal(x, y) {
   const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))
   const t = document.startViewTransition(() => applyTheme())
   t.ready.then(() => document.documentElement.animate({ clipPath: [`circle(0 at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] }, { duration: 520, easing: 'cubic-bezier(.4,0,.2,1)', pseudoElement: '::view-transition-new(root)' })).catch(() => {})
+}
+
+async function wipeFlow(before) {
+  const ok = await new Promise((res) => modal(`<h3>Clean up browser storage?</h3><p>Removes cached files, thumbnails, the offline app copy and leftovers from older versions. <b>Your cloud files and your sign-in are not touched.</b></p>
+    <label class="chkrow"><span class="chk"><input type="checkbox" id="wk"><span></span></span><span>Also forget the encryption key on this device <em>(you'll need your passphrase again)</em></span></label>
+    <div class="acts"><button class="btn glassbtn" id="c">Cancel</button><button class="btn danger" id="o">Clean Up</button></div>`, (bg, close) => {
+    let v = null; bg._onclose = () => res(v); $('#o', bg).onclick = () => { v = { keepKey: !$('#wk', bg).checked }; close() }; $('#c', bg).onclick = close
+  }))
+  if (!ok) return
+  const t = toast('Cleaning up…', 'busy', 0)
+  try {
+    S.thumbs.forEach((u) => URL.revokeObjectURL(u)); S.thumbs.clear(); dropBlobs(); S.cached.clear()
+    await cache.wipeBrowserStorage(ok)
+    if (!ok.keepKey) { await E.lock(); S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file' } }) }
+    await sleep(300); const after = (await cache.estimate()).usage || 0
+    toast(`Freed ${fmtSize(Math.max(0, before - after))} · your cloud files are untouched`)
+  } catch (e) { toast(errMsg(e), 'red') } finally { t.close() }
+  settingsView(); updateCacheLabel()
 }
 
 /* ---------- thumbnails ---------- */
@@ -592,7 +620,7 @@ async function makeThumb(file) {
   return {}
 }
 function toJpeg(src, w, h) {
-  const k = Math.min(1, 480 / Math.max(w, h)); const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k))
+  const k = Math.min(1, 320 / Math.max(w, h)); const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k))
   c.getContext('2d').drawImage(src, 0, 0, c.width, c.height)
   return new Promise((r) => c.toBlob(r, 'image/jpeg', 0.82))
 }
@@ -674,9 +702,11 @@ async function enqueueUploads(entries, from) {
   let encrypt = e2eAuto()
   if (encrypt && !E.unlocked()) { if (!(await unlockFlow('Unlock to upload encrypted files'))) { toast('Upload cancelled — encryption is locked', 'red'); return } }
   let first = null
+  const taken = new Map(); const tk = (p) => taken.get(p) || (taken.set(p, new Set([...live().filter((i) => i.kind === 'file' && i.path === p).map((i) => i.name.toLowerCase()), ...S.transfers.filter((x) => x.kind === 'up' && active(x) && x.path === p).map((x) => x.name.toLowerCase())])), taken.get(p))
   for (const { file, path } of entries) {
     if (file.size > max) { toast(`${file.name} is larger than ${fmtSize(max)} (Telegram limit)`, 'red'); continue }
-    const t = { id: ++trId, kind: 'up', name: file.name, size: file.size, file, path, p: 0, bytes: 0, state: 'wait', ctl: {}, enc: encrypt }
+    if (!file.size && !file.type && !/\.[a-z0-9]+$/i.test(file.name)) continue
+    const t = { id: ++trId, kind: 'up', name: uniqueName(path, file.name, tk(path)), size: file.size, file, path, p: 0, bytes: 0, state: 'wait', ctl: {}, enc: encrypt }
     if (/^image\//.test(file.type) && file.size < 25e6) t.thumb = URL.createObjectURL(file)
     S.transfers.push(t); first = first || t
   }
@@ -692,7 +722,7 @@ async function pumpUploads() {
     ;(async () => {
       try {
         const { thumb, video } = await makeThumb(t.file)
-        const it = await tg.uploadFile(t.file, t.path, { onProgress: (f, b) => track(t, f, b), ctl: t.ctl, thumb, video, encrypt: t.enc })
+        const it = await tg.uploadFile(t.file, t.path, { name: t.name, onProgress: (f, b) => track(t, f, b), ctl: t.ctl, thumb, video, encrypt: t.enc })
         if (it) { S.items.unshift(it); S.fresh.add(it.id); if (thumb) { const u = URL.createObjectURL(thumb); S.thumbs.set(it.id, u); cache.putThumb(it.id, thumb); it.hasThumb = true } }
         t.state = 'done'; t.p = 1; t.bytes = t.size; render()
       } catch (e) { if (t.state !== 'fail') { t.state = 'fail'; t.err = errMsg(e) } }
@@ -786,12 +816,12 @@ function confirmBox(title, text, okText, danger) {
     $('#o', bg).onclick = () => { v = true; close() }; $('#c', bg).onclick = close; setTimeout(() => $('#o', bg).focus(), 60)
   }))
 }
-function pickFolder(exclude = [], title = 'Move to…') {
+function pickFolder(exclude = [], title = 'Move to…', okText = 'Move Here') {
   return new Promise((res) => {
     const paths = ['/', ...[...allFolders().keys()].sort()].filter((p) => !exclude.some((x) => under(p, x)))
     let chosen = S.view === 'drive' ? S.path : '/'
     modal(`<h3>${title}</h3><p>Choose a destination folder.</p><div class="tree" id="tree">${paths.map((p) => `<button data-p="${esc(p)}" style="padding-left:${10 + (p === '/' ? 0 : p.split('/').length - 1) * 18}px">${p === '/' ? `<span class="tree-root">${I.drive}</span>` : folderIcon(22)}<span>${p === '/' ? 'Drive' : esc(baseName(p))}</span></button>`).join('')}</div>
-      <div class="acts"><button class="btn glassbtn" id="nf2">${I.folderPlus}</button><span class="grow"></span><button class="btn glassbtn" id="c">Cancel</button><button class="btn primary" id="o">Move Here</button></div>`, (bg, close) => {
+      <div class="acts"><button class="btn glassbtn" id="nf2">${I.folderPlus}</button><span class="grow"></span><button class="btn glassbtn" id="c">Cancel</button><button class="btn primary" id="o">${okText}</button></div>`, (bg, close) => {
       let v = null; bg._onclose = () => res(v)
       const mark = () => bg.querySelectorAll('#tree button').forEach((b) => b.classList.toggle('on', b.dataset.p === chosen))
       bg.querySelectorAll('#tree button').forEach((b) => (b.onclick = () => { chosen = b.dataset.p; mark() })); mark()
@@ -868,7 +898,7 @@ async function decryptAll() {
 
 /* ---------- keyboard shortcuts ---------- */
 function showKeys() {
-  const K = [['Space', 'Quick preview'], ['Enter', 'Open'], ['← → ↑ ↓', 'Move selection'], ['⌘/Ctrl + A', 'Select all'], ['⌫ / Delete', 'Move to Recently Deleted'], ['⌘/Ctrl + I', 'Get info'], ['/', 'Search'], ['⌘/Ctrl + [ / ]', 'Back / Forward'], ['N', 'New folder'], ['U', 'Upload'], ['Esc', 'Close / clear selection'], ['?', 'This list']]
+  const K = [['Space', 'Quick preview'], ['Enter', 'Open'], ['← → ↑ ↓', 'Move selection'], ['⌘/Ctrl + A', 'Select all'], ['⌫ / Delete', 'Move to Recently Deleted'], ['⌘/Ctrl + I', 'Get info'], ['/', 'Search'], ['⌘/Ctrl + [ / ]', 'Back / Forward'], ['N', 'New folder'], ['T', 'New text file'], ['⌘/Ctrl + D', 'Duplicate'], ['U', 'Upload'], ['Esc', 'Close / clear selection'], ['?', 'This list']]
   modal(`<h3>Keyboard shortcuts</h3><div class="keys">${K.map(([k, l]) => `<div><span>${l}</span><kbd>${k}</kbd></div>`).join('')}</div><div class="acts"><button class="btn primary" id="o">Done</button></div>`, (bg, close) => { $('#o', bg).onclick = close })
 }
 
@@ -913,45 +943,49 @@ async function rename(it) {
   await moveFolder(it.path, np, 'Renaming…')
 }
 async function moveFolder(from, to, label) {
-  await busy(label, async () => {
-    const ds = descendants(from)
-    if (!ds.some((i) => i.kind === 'folder' && i.path === from)) await tg.createFolder(to).then((f) => S.items.unshift(f))
-    for (const i of ds) { i.path = to + i.path.slice(from.length); await tg.editItem(i) }
-  })
+  const ds = descendants(from)
+  try { if (!ds.some((i) => i.kind === 'folder' && i.path === from)) await tg.createFolder(to).then((f) => S.items.unshift(f)) } catch (e) { return toast(errMsg(e), 'red') }
+  await runAll(ds, async (i) => { const old = i.path; i.path = to + i.path.slice(from.length); try { await tg.editItem(i) } catch (e) { i.path = old; throw e } }, label)
+  render()
 }
 async function moveItems(items, dest) {
   if (dest == null) dest = await pickFolder(items.filter((i) => i.kind === 'folder').map((i) => i.path)); if (dest == null) return
   items = items.filter((it) => !(it.kind === 'folder' && under(dest, it.path)))
   const moving = items.filter((it) => (it.kind === 'file' ? it.path !== dest : join(dest, it.name) !== it.path)); if (!moving.length) return
   if (S.view === 'drive') await leave(moving)
-  for (const it of moving) {
-    if (it.kind === 'file') await busy('Moving…', async () => { it.path = dest; await tg.editItem(it) })
-    else await moveFolder(it.path, join(dest, it.name), 'Moving…')
-  }
+  const files = moving.filter((i) => i.kind === 'file')
+  await runAll(files, async (it) => { const old = it.path; it.path = dest; try { await tg.editItem(it) } catch (e) { it.path = old; throw e } }, 'Moving…')
+  for (const it of moving.filter((i) => i.kind === 'folder')) await moveFolder(it.path, join(dest, it.name), 'Moving…')
   S.sel.clear(); render(); toast(`Moved ${moving.length} item${moving.length > 1 ? 's' : ''} to ${dest === '/' ? 'Drive' : baseName(dest)}`)
 }
 async function toggleFav(items) {
   const files = items.filter((i) => i.kind === 'file'); const v = !files.every((i) => i.fav)
-  await busy(v ? 'Adding to Favorites…' : 'Removing from Favorites…', async () => { for (const f of files) { f.fav = v; await tg.editItem(f) } })
+  await runAll(files, async (f) => { f.fav = v; try { await tg.editItem(f) } catch (e) { f.fav = !v; throw e } }, v ? 'Adding to Favorites…' : 'Removing from Favorites…')
+  render(); if (files.length) toast(v ? 'Added to Favorites' : 'Removed from Favorites', '', 1800)
 }
 async function trash(items) {
   const now = Math.floor(Date.now() / 1000)
   await leave(items)
-  await busy('Moving to Recently Deleted…', async () => {
-    for (const it of items) {
-      if (it.kind === 'file') { it.d = now; await tg.editItem(it) }
-      else { const ds = descendants(it.path); if (!ds.some((i) => i.kind === 'folder' && i.path === it.path)) { const f = await tg.createFolder(it.path); S.items.unshift(f); ds.push(f) } for (const i of ds) { i.d = now; await tg.editItem(i) } }
-    }
-  })
+  const all = []
+  for (const it of items) {
+    if (it.kind === 'file') all.push(it)
+    else { const ds = descendants(it.path); if (!ds.some((i) => i.kind === 'folder' && i.path === it.path)) { try { const f = await tg.createFolder(it.path); S.items.unshift(f); ds.push(f) } catch (e) { toast(errMsg(e), 'red'); continue } } all.push(...ds) }
+  }
+  await runAll([...new Set(all)], async (i) => { i.d = now; try { await tg.editItem(i) } catch (e) { i.d = 0; throw e } }, 'Moving to Recently Deleted…')
   S.sel.clear(); render(); toast(`${items.length} item${items.length > 1 ? 's' : ''} moved to Recently Deleted`)
 }
-async function restore(items) { await leave(items); await busy('Restoring…', async () => { for (const it of items) { it.d = 0; await tg.editItem(it) } }); S.sel.clear(); render(); toast('Restored') }
+async function restore(items) {
+  await leave(items)
+  const r = await runAll(items, async (it) => { const o = it.d; it.d = 0; try { await tg.editItem(it) } catch (e) { it.d = o; throw e } }, 'Restoring…')
+  S.sel.clear(); render(); if (r.ok) toast(`Restored ${r.ok} item${r.ok > 1 ? 's' : ''}`)
+}
 async function purge(items, ask = true) {
   if (ask && !(await confirmBox('Delete forever?', `${items.length} item${items.length > 1 ? 's' : ''} will be permanently deleted from Telegram. This can't be undone.`, 'Delete', true))) return
   await leave(items)
   await busy('Deleting…', async () => {
     const ids = items.map((i) => i.id).filter((x) => typeof x === 'number')
-    const extra = items.map((i) => i.sec && i.sec.th).filter(Boolean)
+    const gone = new Set(ids), used = new Set(S.items.filter((i) => !gone.has(i.id) && i.sec && i.sec.th).map((i) => i.sec.th))
+    const extra = [...new Set(items.map((i) => i.sec && i.sec.th).filter((t) => t && !used.has(t)))]
     await tg.deleteIds([...ids, ...extra]); await cache.remove(ids).catch(() => {})
     const set = new Set(ids); S.items = S.items.filter((i) => !set.has(i.id))
   })
@@ -965,7 +999,11 @@ async function share(items) {
 }
 function act(a, items, src) {
   if (!items.length) return
-  if (a === 'download') return download(items, src)
+  if (a === 'download') return items.some((i) => i.kind === 'folder') ? zipItems(items) : download(items, src)
+  if (a === 'zip') return zipItems(items)
+  if (a === 'dup') return copyItems(items)
+  if (a === 'copy') return copyItems(items, '')
+  if (a === 'edit') return editText(items[0])
   if (a === 'pin') return pin(items, true)
   if (a === 'unpin') return pin(items, false)
   if (a === 'move') return moveItems(items)
@@ -1004,8 +1042,8 @@ function ctxMenu(x, y, items) {
   const pinned = files.length && files.every((f) => S.cached.get(f.id)?.pin)
   const html = S.view === 'trash' ? B('restore', I.restore, 'Restore') + '<hr>' + B('purge', I.trash, 'Delete Forever', 'red')
     : (one ? (it.kind === 'folder' ? B('open', I.drive, 'Open', '', '↵') : B('preview', I.eye, 'Quick Preview', '', 'Space')) : '') +
-      (files.length ? B('download', I.download, files.length > 1 ? `Download ${files.length} Files` : 'Download') + (pinned ? '' : B('pin', I.offline, 'Keep on This Device')) + (files.some((f) => S.cached.has(f.id)) ? B('unpin', I.broom, 'Delete from This Device') : '') + B('share', I.send, 'Send to Saved Messages') : '') + '<hr>' +
-      (one && !it.locked ? B('rename', I.edit, 'Rename') : '') + B('move', I.move, 'Move to…') + (files.length ? B('fav', files.every((f) => f.fav) ? I.starFill : I.star, files.every((f) => f.fav) ? 'Remove from Favorites' : 'Add to Favorites') : '') +
+      (files.length || items.some((i) => i.kind === 'folder') ? B('download', I.download, items.some((i) => i.kind === 'folder') ? 'Download as ZIP' : files.length > 1 ? `Download ${files.length} Files` : 'Download') : '') + (files.length > 1 && !items.some((i) => i.kind === 'folder') ? B('zip', I.zip, 'Download as ZIP') : '') + (one && files.length && isText(it) && it.size < 2097152 ? B('edit', I.note, 'Edit Text') : '') + (files.length ? (pinned ? '' : B('pin', I.offline, 'Keep on This Device')) + (files.some((f) => S.cached.has(f.id)) ? B('unpin', I.broom, 'Delete from This Device') : '') + B('share', I.send, 'Send to Saved Messages') : '') + '<hr>' +
+      (one && !it.locked ? B('rename', I.edit, 'Rename') : '') + B('move', I.move, 'Move to…') + B('dup', I.copy, 'Duplicate') + B('copy', I.copy, 'Copy to…') + (files.length ? B('fav', files.every((f) => f.fav) ? I.starFill : I.star, files.every((f) => f.fav) ? 'Remove from Favorites' : 'Add to Favorites') : '') +
       (one ? B('info', I.info, 'Get Info', '', '⌘I') : '') + (one && files.length && S.view !== 'drive' ? B('reveal', I.drive, 'Show in Folder') : '') + '<hr>' + B('delete', I.trash, 'Delete', 'red', '⌫')
   menu(x, y, html, (b) => act(b.dataset.ca, items, cardOf(it)))
 }
@@ -1045,17 +1083,19 @@ function viewer(it, srcEl) {
   const el = document.createElement('div'); el.className = 'viewer'; document.body.append(el)
   el.innerHTML = `<div class="vbg"></div>
     <div class="vbar glass"><button class="iconbtn" id="vx" title="Close">${I.x}</button><div class="vt"><div class="vn" id="vn"></div><div class="vs" id="vsub"></div></div>
-      <div class="vacts"><button class="iconbtn" id="vfav" title="Favorite"></button><button class="iconbtn" id="vpin" title="Keep on this device">${I.offline}</button><button class="iconbtn hide-s" id="vsh" title="Send to Saved Messages">${I.send}</button><button class="iconbtn" id="vdl" title="Download">${I.download}</button><button class="iconbtn hide-s" id="vinfo" title="Info">${I.info}</button><button class="iconbtn hide-s red" id="vdel" title="Delete">${I.trash}</button></div></div>
+      <div class="vacts"><button class="iconbtn hidden" id="vplay" title="Slideshow">${I.slides}</button><button class="iconbtn" id="vfav" title="Favorite"></button><button class="iconbtn" id="vpin" title="Keep on this device">${I.offline}</button><button class="iconbtn hide-s" id="vsh" title="Send to Saved Messages">${I.send}</button><button class="iconbtn" id="vdl" title="Download">${I.download}</button><button class="iconbtn hide-s" id="vinfo" title="Info">${I.info}</button><button class="iconbtn hide-s red" id="vdel" title="Delete">${I.trash}</button></div></div>
     <div class="stage" id="vst"></div>
     <button class="vnav l glass" id="vl">${I.back}</button><button class="vnav r glass" id="vr">${I.fwd}</button>
     <div class="vcount glass" id="vc"></div>`
-  let ctl = {}, urlNow = null
+  let ctl = {}, urlNow = null, slide = null
+  const stopSlide = () => { if (slide) { clearInterval(slide); slide = null; $('#vplay', el)?.classList.remove('on') } }
+  const nextImg = () => { for (let i = idx + 1; i < list.length; i++) if (isImg(list[i])) return i; return -1 }
   const stage = $('#vst', el)
   const origin = () => { const r = srcEl && srcEl.isConnected ? srcEl.getBoundingClientRect() : null; return r ? `${r.left + r.width / 2}px ${r.top + r.height / 2}px` : '50% 50%' }
   stage.style.transformOrigin = origin()
   requestAnimationFrame(() => el.classList.add('in'))
   const close = () => {
-    if (el._closing) return; el._closing = true; ctl.cancelled = true
+    if (el._closing) return; el._closing = true; ctl.cancelled = true; stopSlide()
     const cur = list[idx]; const src = cardOf(cur); if (src) srcEl = src
     stage.style.transformOrigin = origin(); el.classList.remove('in'); el.classList.add('out')
     document.removeEventListener('keydown', onKey)
@@ -1065,6 +1105,7 @@ function viewer(it, srcEl) {
   const onKey = (e) => { if (document.querySelector('.modal-bg')) return; if (e.key === 'Escape' || (e.key === ' ' && !e.target.closest('video,audio'))) { e.preventDefault(); close() } if (e.key === 'ArrowRight') go2(1); if (e.key === 'ArrowLeft') go2(-1) }
   document.addEventListener('keydown', onKey)
   const go2 = (d) => { const n = idx + d; if (n < 0 || n >= list.length) return; idx = n; stage.dataset.dir = d > 0 ? 'r' : 'l'; show() }
+  $('#vplay', el).onclick = () => { if (slide) { stopSlide(); toast('Slideshow stopped', '', 1400); return } $('#vplay', el).classList.add('on'); toast('Slideshow · tap again to stop', '', 1600); slide = setInterval(() => { const n = nextImg(); if (n < 0) return stopSlide(); stage.dataset.dir = 'r'; idx = n; show() }, 3500) }
   $('#vx', el).onclick = close; $('#vl', el).onclick = () => go2(-1); $('#vr', el).onclick = () => go2(1)
   $('.vbg', el).onclick = close
   $('#vdl', el).onclick = (e) => download([list[idx]], e.currentTarget)
@@ -1078,6 +1119,7 @@ function viewer(it, srcEl) {
     $('#vn', el).textContent = f.name
     $('#vfav', el).innerHTML = f.fav ? I.starFill : I.star; $('#vfav', el).classList.toggle('gold', !!f.fav)
     $('#vpin', el).classList.toggle('on', !!c?.pin); $('#vpin', el).title = c?.pin ? 'Remove from this device' : 'Keep on this device'
+    $('#vplay', el).classList.toggle('hidden', !(isImg(f) && list.filter(isImg).length > 1))
     $('#vl', el).classList.toggle('hidden', idx <= 0); $('#vr', el).classList.toggle('hidden', idx >= list.length - 1)
     $('#vc', el).textContent = list.length > 1 ? `${idx + 1} of ${list.length}` : ''; $('#vc', el).classList.toggle('hidden', list.length < 2)
   }
@@ -1124,6 +1166,7 @@ function viewer(it, srcEl) {
         stage.innerHTML = isVid(f) ? `<video src="${url}" controls autoplay playsinline ${th ? `poster="${th}"` : ''}></video>`
           : `<div class="aud glass">${th ? `<img src="${th}">` : `<div class="aud-art">${I.music}</div>`}<div class="aud-n">${esc(f.name)}</div><div class="aud-s">${fmtSize(f.size)}${f.duration ? ' · ' + fmtDur(f.duration) : ''}</div><audio src="${url}" controls autoplay></audio></div>`
         const media = $('video,audio', stage)
+        media.onended = () => { if (!isAud(f)) return; for (let i = idx + 1; i < list.length; i++) if (isAud(list[i])) { idx = i; stage.dataset.dir = 'r'; show(); return } }
         media.onerror = () => { if (my.cancelled) return; stage.innerHTML = unsupported(f, "This format can't be played in the browser.") ; bindUns() }
         setSub(mode); return
       }
@@ -1136,7 +1179,9 @@ function viewer(it, srcEl) {
         if (url) txt = await (await fetch(url)).text()
         else { loading(f); const n = Math.min(f.size, 512 * 1024); const u8 = f.size ? await tg.readRange(f, 0, n - 1, my) : new Uint8Array(); if (my.cancelled) return; txt = new TextDecoder().decode(u8) + (f.size > n ? '\n\n… (preview shows the first 512 KB)' : ''); mode = 'memory' }
         const lines = txt.split('\n').slice(0, 20000)
-        stage.innerHTML = `<div class="code glass"><pre>${lines.map((l) => `<code>${esc(l) || ' '}</code>`).join('')}</pre></div>`; setSub(mode); return
+        stage.innerHTML = `<div class="code glass">${f.size < 2097152 ? `<button class="btn glassbtn sm ed-btn" id="vedit">${I.note} Edit</button>` : ''}<pre>${lines.map((l) => `<code>${esc(l) || ' '}</code>`).join('')}</pre></div>`; setSub(mode)
+        const eb = $('#vedit', stage); if (eb) eb.onclick = () => editText(f, (nu) => { list[idx] = nu; show() })
+        return
       }
       stage.innerHTML = unsupported(f); bindUns(); setSub(mode)
     } catch (e) { if (!my.cancelled) { stage.innerHTML = unsupported(f, `Couldn't load preview: ${errMsg(e)}`); bindUns() } }
@@ -1163,6 +1208,154 @@ function zoomable(stage) {
   const up = (e) => { pts.delete(e.pointerId); last = null; if (s <= 1.02) { s = 1; x = y = 0; apply(true) } }
   box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up)
 }
+
+/* ---------- extras: batch ops, copies, ZIP, text editor, duplicates ---------- */
+/** Run fn over items with limited parallelism and one progress toast. Failures don't stop the batch. */
+async function runAll(items, fn, label, conc = 4) {
+  if (!items.length) return { ok: 0, fail: 0 }
+  const t = toast(items.length > 1 ? `${label} 0/${items.length}` : label, 'busy', 0)
+  let i = 0, ok = 0, fail = 0, lastErr = null
+  const work = async () => { while (i < items.length) { const it = items[i++]; try { await fn(it); ok++ } catch (e) { fail++; lastErr = e } if (items.length > 1) t.set(`${label} ${ok + fail}/${items.length}`) } }
+  await Promise.all(Array.from({ length: Math.min(conc, items.length) }, work))
+  t.close()
+  if (fail) toast(`${fail} item${fail > 1 ? 's' : ''} failed: ${errMsg(lastErr)}`, 'red', 5000)
+  return { ok, fail }
+}
+/** "name.ext" → "name copy.ext", "name copy 2.ext" … unique within a folder */
+function uniqueName(path, name, taken, style = 'num') {
+  const names = taken || new Set(live().filter((i) => i.kind === 'file' && i.path === path).map((i) => i.name.toLowerCase()))
+  if (!names.has(name.toLowerCase())) { names.add(name.toLowerCase()); return name }
+  const dot = name.lastIndexOf('.'), b = dot > 0 ? name.slice(0, dot) : name, e = dot > 0 ? name.slice(dot) : ''
+  for (let n = style === 'copy' ? 1 : 2; ; n++) {
+    const c = style === 'copy' ? `${b} copy${n > 1 ? ' ' + n : ''}${e}` : `${b} (${n})${e}`
+    if (!names.has(c.toLowerCase())) { names.add(c.toLowerCase()); return c }
+  }
+}
+async function copyItems(items, dest) {
+  const dup = dest == null
+  if (!dup) { dest = await pickFolder([], 'Copy to…', 'Copy Here'); if (dest == null) return }
+  if (items.some((i) => i.locked) && !(await unlockFlow())) return
+  const jobs = [] // { it, path }
+  const taken = new Map(); const tk = (p) => taken.get(p) || (taken.set(p, new Set(live().filter((i) => i.kind === 'file' && i.path === p).map((i) => i.name.toLowerCase()))), taken.get(p))
+  const folders = []
+  for (const it of items) {
+    const base = dup ? parentOf(it.kind === 'folder' ? it.path : it.path + '/x') : dest
+    if (it.kind === 'file') { const p = dup ? it.path : dest; jobs.push({ it, path: p, name: uniqueName(p, it.name, tk(p), dup ? 'copy' : 'num') }); continue }
+    let root = join(dup ? parentOf(it.path) : dest, it.name + (dup ? ' copy' : '')), n = 2; const ex = allFolders(); while (ex.has(root)) root = join(dup ? parentOf(it.path) : dest, `${it.name}${dup ? ' copy' : ''} ${n++}`)
+    folders.push(root)
+    for (const d of live().filter((x) => x.kind === 'folder' && under(x.path, it.path))) folders.push(root + d.path.slice(it.path.length))
+    for (const f of live().filter((x) => x.kind === 'file' && under(x.path, it.path))) jobs.push({ it: f, path: root + f.path.slice(it.path.length), name: f.name })
+    void base
+  }
+  for (const p of [...new Set(folders)]) { try { const f = await ensureFolderMsg(p); S.fresh.add(f.id) } catch (e) { toast(errMsg(e), 'red'); return } }
+  const r = await runAll(jobs, async (j) => { const c = await tg.copyItem(j.it, { path: j.path, name: j.name }); S.items.unshift(c); S.fresh.add(c.id); if (S.thumbs.has(j.it.id)) S.thumbs.set(c.id, S.thumbs.get(j.it.id)) }, 'Copying…', 3)
+  S.sel.clear(); render()
+  if (r.ok || folders.length) toast(`${dup ? 'Duplicated' : 'Copied'} ${items.length} item${items.length > 1 ? 's' : ''}${dup ? '' : ` to ${dest === '/' ? 'Drive' : baseName(dest)}`}`)
+}
+
+/* store-only ZIP writer (streams into a file when the browser allows it) */
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0 } return t })()
+const crcUp = (c, d) => { c = ~c; for (let i = 0; i < d.length; i++) c = CRC[(c ^ d[i]) & 255] ^ (c >>> 8); return ~c >>> 0 }
+async function zipItems(items) {
+  if (items.some((i) => i.locked) && !(await unlockFlow())) return
+  const files = []
+  for (const it of items) {
+    if (it.kind === 'file') files.push({ it, name: it.name })
+    else { const pre = parentOf(it.path); for (const f of live().filter((x) => x.kind === 'file' && under(x.path, it.path))) files.push({ it: f, name: (f.path.slice(pre === '/' ? 1 : pre.length + 1) + '/' + f.name) }) }
+  }
+  if (!files.length) return toast('Nothing to download — the folder is empty', 'red')
+  const seen = new Set(); for (const f of files) { let n = f.name, k = 2; while (seen.has(n.toLowerCase())) { const d = f.name.lastIndexOf('.'); n = d > 0 ? `${f.name.slice(0, d)} (${k})${f.name.slice(d)}` : `${f.name} (${k})`; k++ } seen.add(n.toLowerCase()); f.name = n }
+  const total = files.reduce((a, f) => a + f.it.size, 0)
+  if (total > 3.9 * 1024 ** 3) return toast('ZIP downloads are limited to 4 GB — select fewer files', 'red')
+  const zname = (items.length === 1 && items[0].kind === 'folder' ? items[0].name : 'TeleCloud ' + new Date().toISOString().slice(0, 10)) + '.zip'
+  let w = null, parts = []
+  if (window.showSaveFilePicker && total > 300 * 1024 * 1024) { try { w = await (await window.showSaveFilePicker({ suggestedName: zname })).createWritable() } catch { return } }
+  const t = { id: ++trId, kind: 'down', name: zname, size: total, p: 0, bytes: 0, state: 'run', started: 1, ctl: {}, thumb: null }
+  S.transfers.push(t); trOpen = true; renderTransfers()
+  const src = cardOf(items[0]); if (src) { await nextFrame(); fly(centerOf(src), `<div class="flyzip">${I.zip}</div>`) }
+  const enc = new TextEncoder(); let off = 0, got = 0; const cen = []
+  const put = async (u8) => { off += u8.length; if (w) await w.write(u8); else parts.push(u8) }
+  const dt = (() => { const d = new Date(); return { t: (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), d: ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate() } })()
+  try {
+    for (const f of files) {
+      const nm = enc.encode(f.name), start = off
+      const h = new DataView(new ArrayBuffer(30)); h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0808, true); h.setUint16(10, dt.t, true); h.setUint16(12, dt.d, true); h.setUint16(26, nm.length, true)
+      await put(new Uint8Array(h.buffer)); await put(nm)
+      let crc = 0, size = 0
+      const cached = await cache.getMedia(f.it.id)
+      const src = cached ? (async function* () { yield new Uint8Array(await cached.arrayBuffer()) })() : f.it.isPhoto ? (async function* () { yield new Uint8Array(await (await tg.downloadBlob(f.it)).arrayBuffer()) })() : tg.downloadChunks(f.it, t.ctl)
+      for await (const ch of src) {
+        while (t.ctl.paused && !t.ctl.cancelled) await sleep(300)
+        if (t.ctl.cancelled) throw new Error('Cancelled')
+        crc = crcUp(crc, ch); size += ch.length; got += ch.length; await put(ch); track(t, Math.min(1, got / (total || 1)), got)
+      }
+      const dd = new DataView(new ArrayBuffer(16)); dd.setUint32(0, 0x08074b50, true); dd.setUint32(4, crc, true); dd.setUint32(8, size, true); dd.setUint32(12, size, true); await put(new Uint8Array(dd.buffer))
+      cen.push({ nm, crc, size, start })
+    }
+    const cstart = off
+    for (const c of cen) {
+      const h = new DataView(new ArrayBuffer(46)); h.setUint32(0, 0x02014b50, true); h.setUint16(4, 20, true); h.setUint16(6, 20, true); h.setUint16(8, 0x0808, true); h.setUint16(12, dt.t, true); h.setUint16(14, dt.d, true)
+      h.setUint32(16, c.crc, true); h.setUint32(20, c.size, true); h.setUint32(24, c.size, true); h.setUint16(28, c.nm.length, true); h.setUint32(42, c.start, true)
+      await put(new Uint8Array(h.buffer)); await put(c.nm)
+    }
+    const e = new DataView(new ArrayBuffer(22)); e.setUint32(0, 0x06054b50, true); e.setUint16(8, cen.length, true); e.setUint16(10, cen.length, true); e.setUint32(12, off - cstart, true); e.setUint32(16, cstart, true); await put(new Uint8Array(e.buffer))
+    if (w) await w.close()
+    else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(parts, { type: 'application/zip' })); a.download = zname; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 60000) }
+    t.state = 'done'; t.p = 1; t.bytes = total
+  } catch (e) { if (w) await w.abort().catch(() => {}); t.state = 'fail'; t.err = /Cancel/.test(errMsg(e)) ? 'Cancelled' : errMsg(e) }
+  parts = null; renderTransfers()
+}
+
+/* ---------- text notes: create & edit ---------- */
+function editorBox(title, name, text, okText = 'Save') {
+  return new Promise((res) => modal(`<div class="ed-h"><span class="ed-ic">${I.note}</span><input class="field ed-n" id="en" value="${esc(name)}" spellcheck="false"><span class="ed-c" id="ecount"></span></div>
+    <textarea class="field ed-t" id="et" spellcheck="false" placeholder="Start typing…">${esc(text)}</textarea>
+    <div class="acts"><span class="ed-k">${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+S to save</span><span class="grow"></span><button class="btn glassbtn" id="c">Cancel</button><button class="btn primary" id="o">${I.save} ${okText}</button></div>`, (bg, close) => {
+    const ta = $('#et', bg), nm = $('#en', bg), cnt = $('#ecount', bg)
+    const upd = () => { cnt.textContent = `${ta.value.length.toLocaleString()} chars` }; upd(); ta.oninput = upd
+    let v = null; bg._onclose = () => res(v)
+    const ok = () => { const n = nm.value.trim().replace(/\//g, '-'); if (!n) return nm.focus(); v = { name: /\.[a-z0-9]{1,6}$/i.test(n) ? n : n + '.txt', text: ta.value }; close() }
+    $('#o', bg).onclick = ok; $('#c', bg).onclick = close
+    ta.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); ok() } if (e.key === 'Tab') { e.preventDefault(); ta.setRangeText('  ', ta.selectionStart, ta.selectionEnd, 'end'); upd() } })
+    setTimeout(() => (text ? ta : nm).focus(), 80)
+  }, 'editor'))
+}
+async function newTextFile() {
+  if (S.view !== 'drive') go({ view: 'drive', path: S.view === 'drive' ? S.path : '/' }, 'fwd')
+  const r = await editorBox('New text file', 'Untitled.txt', '', 'Create'); if (!r) return
+  const path = S.path, name = uniqueName(path, r.name)
+  const file = new File([r.text], name, { type: r.name.endsWith('.md') ? 'text/markdown' : 'text/plain' })
+  enqueueUploads([{ file, path }], { x: innerWidth / 2, y: innerHeight / 2 })
+}
+async function editText(it, after) {
+  if (it.locked && !(await unlockFlow())) return
+  if (it.size > 2 * 1024 * 1024) return toast('Files over 2 MB can only be previewed', 'red')
+  const t = toast('Opening…', 'busy', 0); let txt = ''
+  try { const b = await cache.getMedia(it.id); txt = b ? await b.text() : new TextDecoder().decode(it.size ? await tg.readRange(it, 0, it.size - 1) : new Uint8Array()) } catch (e) { t.close(); return toast(errMsg(e), 'red') }
+  t.close()
+  const r = await editorBox('Edit', it.name, txt); if (!r || (r.text === txt && r.name === it.name)) return
+  await busy('Saving…', async () => {
+    const file = new File([r.text], r.name, { type: it.mime || 'text/plain' })
+    const nu = await tg.replaceFile({ ...it, name: r.name }, file)
+    await cache.remove([it.id]).catch(() => {}); dropBlobs([it.id]); S.cached.delete(it.id)
+    S.items = S.items.map((x) => (x.id === it.id ? nu : x)); S.fresh.add(nu.id)
+    toast('Saved to your cloud'); after && after(nu)
+  })
+}
+
+/* ---------- duplicates ---------- */
+async function findDups() {
+  const groups = new Map()
+  for (const f of live()) if (f.kind === 'file' && !f.locked) { const k = f.name.toLowerCase() + '|' + f.size; groups.set(k, [...(groups.get(k) || []), f]) }
+  const g = [...groups.values()].filter((x) => x.length > 1).map((x) => x.sort((a, b) => a.date - b.date))
+  if (!g.length) return confirmBox('No duplicates found', 'Every file in your drive is unique. Nice and tidy!', 'Done')
+  const extra = g.flatMap((x) => x.slice(1)), size = extra.reduce((a, b) => a + b.size, 0)
+  const ok = await new Promise((res) => modal(`<h3>${g.length} duplicate group${g.length > 1 ? 's' : ''}</h3><p>Keeping the oldest copy of each. ${extra.length} extra file${extra.length > 1 ? 's' : ''} · ${fmtSize(size)}.</p>
+    <div class="dups">${g.slice(0, 60).map((x) => `<div class="dup">${S.thumbs.get(x[0].id) ? `<img src="${S.thumbs.get(x[0].id)}">` : fileIcon(x[0].name, 34)}<div><b>${esc(x[0].name)}</b><span>${x.length} copies · ${fmtSize(x[0].size)} each · ${x.map((i) => esc(i.path === '/' ? 'Drive' : baseName(i.path))).join(', ')}</span></div></div>`).join('')}</div>
+    <div class="acts"><button class="btn glassbtn" id="c">Cancel</button><button class="btn danger" id="o">Move ${extra.length} to Recently Deleted</button></div>`, (bg, close) => { let v = false; bg._onclose = () => res(v); $('#o', bg).onclick = () => { v = true; close() }; $('#c', bg).onclick = close }))
+  if (ok) await trash(extra)
+}
+async function restoreAll() { const t = S.items.filter((i) => i.d); if (t.length) await restore(t) }
 
 /* ---------- drag & drop uploads (files + folders) ---------- */
 async function collectEntries(dt, base) {
@@ -1215,10 +1408,10 @@ function bind() {
   const upMenu = (e) => {
     const r = e.currentTarget.getBoundingClientRect(); upFrom = centerOf(e.currentTarget)
     const enc = e2eAuto()
-    const m = menu(r.right - 240, r.bottom + 8, `<button data-u="f">${I.upload}<span>Upload Files</span><kbd>U</kbd></button><button data-u="d">${I.drive}<span>Upload Folder</span></button><button data-u="n">${I.folderPlus}<span>New Folder</span><kbd>N</kbd></button><hr><button data-u="e" class="${enc ? 'on' : ''}">${enc ? I.lock : I.unlock}<span>End-to-end encryption</span><em>${enc ? 'On' : 'Off'}</em></button>`,
+    const m = menu(r.right - 240, r.bottom + 8, `<button data-u="f">${I.upload}<span>Upload Files</span><kbd>U</kbd></button><button data-u="d">${I.drive}<span>Upload Folder</span></button><button data-u="n">${I.folderPlus}<span>New Folder</span><kbd>N</kbd></button><button data-u="t">${I.note}<span>New Text File</span><kbd>T</kbd></button>${touch() ? `<button data-u="c">${I.camera}<span>Take Photo or Video</span></button>` : ''}<hr><button data-u="e" class="${enc ? 'on' : ''}">${enc ? I.lock : I.unlock}<span>End-to-end encryption</span><em>${enc ? 'On' : 'Off'}</em></button>`,
       async (b) => {
         const u = b.dataset.u
-        if (u === 'f') pick(); else if (u === 'd') $('#fdp').click(); else if (u === 'n') newFolder()
+        if (u === 'f') pick(); else if (u === 'd') $('#fdp').click(); else if (u === 'n') newFolder(); else if (u === 't') newTextFile(); else if (u === 'c') $('#fcam').click()
         else if (u === 'e') { if (enc) { localStorage.setItem('tc.e2e', '0'); toast('Encryption off for new uploads', 'lock') } else if (!tg.vault) setupE2E(); else if (await unlockFlow()) { localStorage.setItem('tc.e2e', '1'); toast('New uploads will be encrypted', 'lock') } }
       })
     if (r.bottom + m.offsetHeight + 16 > innerHeight) { m.style.top = r.top - m.offsetHeight - 10 + 'px'; m.style.transformOrigin = 'bottom right' }
@@ -1226,6 +1419,8 @@ function bind() {
   $('#up').onclick = upMenu; $('#fab').onclick = upMenu
   const target = () => (S.view === 'drive' ? S.path : '/')
   $('#fp').onchange = (e) => { enqueueUploads([...e.target.files].map((file) => ({ file, path: target() })), upFrom || { x: innerWidth / 2, y: innerHeight / 2 }); e.target.value = '' }
+  if (!$('#fcam')) { const i = document.createElement('input'); i.type = 'file'; i.id = 'fcam'; i.accept = 'image/*,video/*'; i.capture = 'environment'; i.hidden = true; document.body.append(i) }
+  $('#fcam').onchange = (e) => { const f = e.target.files[0]; if (f) { const n = f.name && f.name !== 'image.jpg' ? f.name : `Photo ${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.jpg`; enqueueUploads([{ file: new File([f], n, { type: f.type, lastModified: Date.now() }), path: target() }], { x: innerWidth / 2, y: innerHeight - 80 }) } e.target.value = '' }
   $('#fdp').onchange = (e) => {
     const base = target(); const list = []
     for (const f of e.target.files) { const rel = (f.webkitRelativePath || f.name).split('/'); const dir = join(base, rel.slice(0, -1).join('/')); list.push({ file: f, path: dir }); let p = dir; while (p !== base && p !== '/') { list.push({ dir: p }); p = parentOf(p) } }
@@ -1239,7 +1434,7 @@ function bind() {
   $('#cachel') && ($('#cachel').onclick = () => go({ view: 'settings' }, 'fwd'))
   c.onclick = (e) => {
     const a = e.target.closest('[data-a]')
-    if (a) { const v = a.dataset.a; if (v === 'upload') { upFrom = centerOf(a); pick() } else if (v === 'newfolder' || v === 'newfolder-root') newFolder(); else if (v === 'empty') { const t = S.items.filter((i) => i.d); t.length && purge(t) } else if (v === 'unlock') unlockFlow(); else if (v === 'e2e') setupE2E().then(() => S.view === 'settings' && settingsView()); else if (v === 'lockv') { E.lock().then(() => { S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file'; S.thumbs.delete(i.id) } }); dropBlobs(); toast('Locked', 'lock'); render() }) } else if (v === 'e2epass') changePass(); else if (v === 'keys') showKeys(); return }
+    if (a) { const v = a.dataset.a; if (v === 'upload') { upFrom = centerOf(a); pick() } else if (v === 'newfolder' || v === 'newfolder-root') newFolder(); else if (v === 'restoreall') restoreAll(); else if (v === 'dups') findDups(); else if (v === 'reload') { const t = toast('Refreshing…', 'busy', 0); refresh().finally(() => { t.close(); toast('Up to date'); S.view === 'settings' && settingsView() }) } else if (v === 'empty') { const t = S.items.filter((i) => i.d); t.length && purge(t) } else if (v === 'unlock') unlockFlow(); else if (v === 'e2e') setupE2E().then(() => S.view === 'settings' && settingsView()); else if (v === 'lockv') { E.lock().then(() => { S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file'; S.thumbs.delete(i.id) } }); dropBlobs(); toast('Locked', 'lock'); render() }) } else if (v === 'e2epass') changePass(); else if (v === 'keys') showKeys(); return }
     const pz = e.target.closest('[data-pz]'); if (pz) { S.pz = Math.min(8, Math.max(2, S.pz - +pz.dataset.pz)); localStorage.setItem('tc.pz', S.pz); $$('.photos', c).forEach((p) => p.style.setProperty('--cols', pcols())); return }
     const cb = e.target.closest('[data-cat]'); if (cb) { go({ view: 'cat', cat: cb.dataset.cat }, 'fwd'); return }
     if (e.target.closest('[data-occ]')) { (async () => { const l = await cache.list(); if (!(await confirmBox('Delete all cache?', `${fmtSize(l.reduce((a, b) => a + b.size, 0))} saved on this device will be removed. Your cloud files are not deleted.`, 'Delete cache', true))) return; await cache.clearAll(); S.thumbs.forEach((u) => URL.revokeObjectURL(u)); S.thumbs.clear(); dropBlobs(); S.cached.clear(); toast('Cache deleted · your cloud files are untouched'); updateCacheLabel(); render() })(); return }
@@ -1299,6 +1494,8 @@ function bind() {
     else if (e.key === '/') { e.preventDefault(); $('#q').focus() }
     else if (e.key === '?') showKeys()
     else if (!mod && e.key.toLowerCase() === 'n' && S.view !== 'settings') newFolder()
+    else if (!mod && e.key.toLowerCase() === 't' && S.view !== 'settings') newTextFile()
+    else if (mod && e.key.toLowerCase() === 'd' && items.length) { e.preventDefault(); copyItems(items) }
     else if (!mod && e.key.toLowerCase() === 'u') { upFrom = centerOf($('#up')); pick() }
     else if (e.key.startsWith('Arrow') && S._vis && S._vis.length) {
       e.preventDefault()
@@ -1350,7 +1547,8 @@ async function start() {
     await tg.getMe(); await tg.ensureChannel()
     shell(); S.hist = [navState()]; S.hi = 0; history.replaceState({ hi: 0 }, '')
     render(); cache.enforce().finally(updateCacheLabel); setupSW(); await refresh()
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !S.transfers.some(active) && !document.querySelector('.viewer,.modal-bg')) refresh() })
+    let lastSync = Date.now()
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastSync > 90e3 && !S.loading && !S.transfers.some(active) && !document.querySelector('.viewer,.modal-bg')) { lastSync = Date.now(); refresh() } })
   } catch (e) {
     document.body.innerHTML = `${WALL}<div class="empty"><div>${logo(64)}<h3>Couldn't connect to Telegram</h3><div>${esc(errMsg(e))}</div><div class="btns"><button class="btn primary" onclick="location.reload()">Try again</button></div></div></div>`
   }

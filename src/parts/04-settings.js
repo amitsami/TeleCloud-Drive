@@ -7,7 +7,7 @@ const segc = (name, opts, cur) => `<div class="seg glass-inset segc" data-set="$
 const sw = (id, on) => `<label class="sw"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span></span></label>`
 async function settingsView() {
   const c = $('#content')
-  const [media, th, est] = await Promise.all([cache.list(), cache.thumbStats(), cache.estimate()])
+  const [media, th, est, pst] = await Promise.all([cache.list(), cache.thumbStats(), cache.storageDetails(), cache.persisted()])
   if (S.view !== 'settings') return
   S.cached = new Map(media.map((m) => [m.id, m]))
   const st = cache.settings()
@@ -22,7 +22,10 @@ async function settingsView() {
   const allSel = shown.length && shown.every((r) => CS.sel.has(r.key))
   const cloud = catStats(), cloudTotal = Object.values(cloud).reduce((a, b) => a + b.size, 0)
   const theme = localStorage.getItem('tc.theme') || 'auto'
-  const quota = est.quota ? `<div class="quota"><div class="q-row"><span>Browser storage used</span><b>${fmtSize(est.usage || 0)} of ${fmtSize(est.quota)}</b></div><div class="prog"><i style="width:${Math.min(100, ((est.usage || 0) / est.quota) * 100)}%"></i></div></div>` : ''
+  const oth = Math.max(0, est.usage - (est.idb ?? total) - (est.caches || 0))
+  const quota = `<div class="quota"><div class="q-row"><span>Browser storage used</span><b>${fmtSize(est.usage)}${est.quota ? ` of ${fmtSize(est.quota)}` : ''}</b></div><div class="prog"><i style="width:${est.quota ? Math.max(1, Math.min(100, (est.usage / est.quota) * 100)) : 0}%"></i></div>
+    <div class="q-det"><span><i style="background:#34A3F5"></i>Cached files ${fmtSize(est.idb ?? total)}</span><span><i style="background:#8B5CF6"></i>App files ${fmtSize(est.caches || 0)}</span>${oth > 1024 ? `<span><i style="background:#94A3B8"></i>Other ${fmtSize(oth)}</span>` : ''}</div>
+    <button class="btn glassbtn sm q-wipe" id="bwipe">${I.broom} Clean Up Browser Storage</button></div>`
   const v = tg.vault, unl = E.unlocked(), encN = S.items.filter((i) => i.enc).length
   const e2e = !v ? `<div class="e2e-card off"><span class="e2e-ic">${I.lock}</span><div><b>End-to-end encryption is off</b><span>Encrypt files in this browser before they're uploaded. Names, contents and thumbnails become unreadable to anyone without your passphrase — including Telegram.</span></div><button class="btn primary" data-a="e2e">Set up</button></div>`
     : `<div class="e2e-card on ${unl ? '' : 'lk'}"><span class="e2e-ic">${unl ? I.unlock : I.lock}</span><div><b>${unl ? 'Encryption is on · Unlocked on this device' : 'Encryption is on · Locked'}</b><span>${encN} encrypted file${encN === 1 ? '' : 's'} · AES-256 · Your passphrase never leaves this device.</span></div>${unl ? `<button class="btn glassbtn sm" data-a="lockv">${I.lock} Lock</button>` : `<button class="btn primary sm" data-a="unlock">${I.unlock} Unlock</button>`}</div>
@@ -56,6 +59,7 @@ async function settingsView() {
       <div class="srow"><div><b>Keep media</b><span>Cached files you haven't used for this long are removed automatically. Files kept offline are never removed.</span></div>${segc('keep', KEEP, st.keep)}</div>
       <div class="srow"><div><b>Maximum cache size</b><span>When full, the least recently used files are removed first.</span></div>${segc('max', MAXS, st.max)}</div>
       <div class="srow"><div><b>Keep downloaded files</b><span>Save a copy of files you download, so the next open is instant.</span></div>${sw('cauto', st.auto)}</div>
+      <div class="srow"><div><b>Protect from browser cleanup</b><span>Ask the browser not to delete your cached files when space is low.</span></div>${sw('cpersist', pst)}</div>
       <div class="srow"><div><b>Keep previewed files</b><span>Off: previews stream straight from the cloud and leave nothing behind on this device.</span></div>${sw('cprev', st.prev)}</div>
     </div>
 
@@ -67,6 +71,10 @@ async function settingsView() {
       <div class="cloud-t"><b>${fmtSize(cloudTotal)}</b><span>used · Unlimited</span></div>
       <div class="cbar">${cloudBar(cloud, cloudTotal) || '<i style="width:100%;background:var(--track)"></i>'}</div>
       <div class="cleg">${Object.entries(cloud).map(([k, v]) => `<span><i style="background:${CATV[k][2]}"></i>${CATV[k][0]} <b>${fmtSize(v.size)}</b></span>`).join('')}</div>
+    </div>
+    <div class="panel mat rows">
+      <div class="srow"><div><b>Find duplicates</b><span>Files with the same name and size. Free up clutter in one tap.</span></div><button class="btn glassbtn sm" data-a="dups">${I.copy} Find</button></div>
+      <div class="srow"><div><b>Refresh from cloud</b><span>Reload the file list from your Telegram channel.</span></div><button class="btn glassbtn sm" data-a="reload">${I.refresh} Refresh</button></div>
     </div>
 
     <div class="set-h"><h2>Appearance</h2></div>
@@ -86,7 +94,7 @@ async function settingsView() {
     <div class="set-h"><h2>Account</h2></div>
     <div class="panel mat rows">
       <div class="srow"><div class="acc"><div class="avatar lg">${esc((uname()[0] || 'T').toUpperCase())}</div><div><b>${esc(uname())}</b><span>${tg.me.username ? '@' + esc(tg.me.username) : ''}${tg.me.phone ? ' · +' + esc(tg.me.phone) : ''}</span></div></div><button class="btn glassbtn sm red" id="slogout">${I.logout} Sign out</button></div>
-      <div class="srow"><div><b>About TeleCloud</b><span>Version 3.0 · Open source · Runs entirely in your browser</span></div><a class="btn glassbtn sm" href="https://github.com/amitsami/TeleCloud-Drive" target="_blank" rel="noopener">${I.github} GitHub</a></div>
+      <div class="srow"><div><b>About TeleCloud</b><span>Version 3.5 · Open source · Runs entirely in your browser</span></div><a class="btn glassbtn sm" href="https://github.com/amitsami/TeleCloud-Drive" target="_blank" rel="noopener">${I.github} GitHub</a></div>
     </div>
   </div>`
   $$('.segc', c).forEach(placeSeg)
@@ -120,6 +128,8 @@ async function settingsView() {
     setTimeout(() => { settingsView(); updateCacheLabel() }, 260)
   })
   $('#cauto', c).onchange = (e) => cache.setSettings({ auto: e.target.checked })
+  $('#cpersist', c).onchange = async (e) => { if (e.target.checked) { const ok = await cache.persist(); e.target.checked = ok; toast(ok ? 'Cached files are protected from browser cleanup' : 'Your browser declined — install the app or bookmark it, then try again', ok ? '' : 'red') } else toast('Browsers only allow turning this off by clearing site data', '', 3500) }
+  $('#bwipe', c).onclick = () => wipeFlow(est.usage)
   $('#cprev', c).onchange = (e) => cache.setSettings({ prev: e.target.checked })
   $('#solid', c).onchange = (e) => { localStorage.setItem('tc.solid', e.target.checked ? '1' : '0'); applyTheme() }
   $('#still', c).onchange = (e) => { localStorage.setItem('tc.still', e.target.checked ? '1' : '0'); applyTheme() }
@@ -133,4 +143,22 @@ function themeReveal(x, y) {
   const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))
   const t = document.startViewTransition(() => applyTheme())
   t.ready.then(() => document.documentElement.animate({ clipPath: [`circle(0 at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] }, { duration: 520, easing: 'cubic-bezier(.4,0,.2,1)', pseudoElement: '::view-transition-new(root)' })).catch(() => {})
+}
+
+async function wipeFlow(before) {
+  const ok = await new Promise((res) => modal(`<h3>Clean up browser storage?</h3><p>Removes cached files, thumbnails, the offline app copy and leftovers from older versions. <b>Your cloud files and your sign-in are not touched.</b></p>
+    <label class="chkrow"><span class="chk"><input type="checkbox" id="wk"><span></span></span><span>Also forget the encryption key on this device <em>(you'll need your passphrase again)</em></span></label>
+    <div class="acts"><button class="btn glassbtn" id="c">Cancel</button><button class="btn danger" id="o">Clean Up</button></div>`, (bg, close) => {
+    let v = null; bg._onclose = () => res(v); $('#o', bg).onclick = () => { v = { keepKey: !$('#wk', bg).checked }; close() }; $('#c', bg).onclick = close
+  }))
+  if (!ok) return
+  const t = toast('Cleaning up…', 'busy', 0)
+  try {
+    S.thumbs.forEach((u) => URL.revokeObjectURL(u)); S.thumbs.clear(); dropBlobs(); S.cached.clear()
+    await cache.wipeBrowserStorage(ok)
+    if (!ok.keepKey) { await E.lock(); S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file' } }) }
+    await sleep(300); const after = (await cache.estimate()).usage || 0
+    toast(`Freed ${fmtSize(Math.max(0, before - after))} · your cloud files are untouched`)
+  } catch (e) { toast(errMsg(e), 'red') } finally { t.close() }
+  settingsView(); updateCacheLabel()
 }

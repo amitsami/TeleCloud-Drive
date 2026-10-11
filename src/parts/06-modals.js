@@ -29,12 +29,12 @@ function confirmBox(title, text, okText, danger) {
     $('#o', bg).onclick = () => { v = true; close() }; $('#c', bg).onclick = close; setTimeout(() => $('#o', bg).focus(), 60)
   }))
 }
-function pickFolder(exclude = [], title = 'Move to…') {
+function pickFolder(exclude = [], title = 'Move to…', okText = 'Move Here') {
   return new Promise((res) => {
     const paths = ['/', ...[...allFolders().keys()].sort()].filter((p) => !exclude.some((x) => under(p, x)))
     let chosen = S.view === 'drive' ? S.path : '/'
     modal(`<h3>${title}</h3><p>Choose a destination folder.</p><div class="tree" id="tree">${paths.map((p) => `<button data-p="${esc(p)}" style="padding-left:${10 + (p === '/' ? 0 : p.split('/').length - 1) * 18}px">${p === '/' ? `<span class="tree-root">${I.drive}</span>` : folderIcon(22)}<span>${p === '/' ? 'Drive' : esc(baseName(p))}</span></button>`).join('')}</div>
-      <div class="acts"><button class="btn glassbtn" id="nf2">${I.folderPlus}</button><span class="grow"></span><button class="btn glassbtn" id="c">Cancel</button><button class="btn primary" id="o">Move Here</button></div>`, (bg, close) => {
+      <div class="acts"><button class="btn glassbtn" id="nf2">${I.folderPlus}</button><span class="grow"></span><button class="btn glassbtn" id="c">Cancel</button><button class="btn primary" id="o">${okText}</button></div>`, (bg, close) => {
       let v = null; bg._onclose = () => res(v)
       const mark = () => bg.querySelectorAll('#tree button').forEach((b) => b.classList.toggle('on', b.dataset.p === chosen))
       bg.querySelectorAll('#tree button').forEach((b) => (b.onclick = () => { chosen = b.dataset.p; mark() })); mark()
@@ -111,7 +111,7 @@ async function decryptAll() {
 
 /* ---------- keyboard shortcuts ---------- */
 function showKeys() {
-  const K = [['Space', 'Quick preview'], ['Enter', 'Open'], ['← → ↑ ↓', 'Move selection'], ['⌘/Ctrl + A', 'Select all'], ['⌫ / Delete', 'Move to Recently Deleted'], ['⌘/Ctrl + I', 'Get info'], ['/', 'Search'], ['⌘/Ctrl + [ / ]', 'Back / Forward'], ['N', 'New folder'], ['U', 'Upload'], ['Esc', 'Close / clear selection'], ['?', 'This list']]
+  const K = [['Space', 'Quick preview'], ['Enter', 'Open'], ['← → ↑ ↓', 'Move selection'], ['⌘/Ctrl + A', 'Select all'], ['⌫ / Delete', 'Move to Recently Deleted'], ['⌘/Ctrl + I', 'Get info'], ['/', 'Search'], ['⌘/Ctrl + [ / ]', 'Back / Forward'], ['N', 'New folder'], ['T', 'New text file'], ['⌘/Ctrl + D', 'Duplicate'], ['U', 'Upload'], ['Esc', 'Close / clear selection'], ['?', 'This list']]
   modal(`<h3>Keyboard shortcuts</h3><div class="keys">${K.map(([k, l]) => `<div><span>${l}</span><kbd>${k}</kbd></div>`).join('')}</div><div class="acts"><button class="btn primary" id="o">Done</button></div>`, (bg, close) => { $('#o', bg).onclick = close })
 }
 

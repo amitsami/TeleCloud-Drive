@@ -37,7 +37,7 @@ async function makeThumb(file) {
   return {}
 }
 function toJpeg(src, w, h) {
-  const k = Math.min(1, 480 / Math.max(w, h)); const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k))
+  const k = Math.min(1, 320 / Math.max(w, h)); const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k))
   c.getContext('2d').drawImage(src, 0, 0, c.width, c.height)
   return new Promise((r) => c.toBlob(r, 'image/jpeg', 0.82))
 }
@@ -119,9 +119,11 @@ async function enqueueUploads(entries, from) {
   let encrypt = e2eAuto()
   if (encrypt && !E.unlocked()) { if (!(await unlockFlow('Unlock to upload encrypted files'))) { toast('Upload cancelled — encryption is locked', 'red'); return } }
   let first = null
+  const taken = new Map(); const tk = (p) => taken.get(p) || (taken.set(p, new Set([...live().filter((i) => i.kind === 'file' && i.path === p).map((i) => i.name.toLowerCase()), ...S.transfers.filter((x) => x.kind === 'up' && active(x) && x.path === p).map((x) => x.name.toLowerCase())])), taken.get(p))
   for (const { file, path } of entries) {
     if (file.size > max) { toast(`${file.name} is larger than ${fmtSize(max)} (Telegram limit)`, 'red'); continue }
-    const t = { id: ++trId, kind: 'up', name: file.name, size: file.size, file, path, p: 0, bytes: 0, state: 'wait', ctl: {}, enc: encrypt }
+    if (!file.size && !file.type && !/\.[a-z0-9]+$/i.test(file.name)) continue
+    const t = { id: ++trId, kind: 'up', name: uniqueName(path, file.name, tk(path)), size: file.size, file, path, p: 0, bytes: 0, state: 'wait', ctl: {}, enc: encrypt }
     if (/^image\//.test(file.type) && file.size < 25e6) t.thumb = URL.createObjectURL(file)
     S.transfers.push(t); first = first || t
   }
@@ -137,7 +139,7 @@ async function pumpUploads() {
     ;(async () => {
       try {
         const { thumb, video } = await makeThumb(t.file)
-        const it = await tg.uploadFile(t.file, t.path, { onProgress: (f, b) => track(t, f, b), ctl: t.ctl, thumb, video, encrypt: t.enc })
+        const it = await tg.uploadFile(t.file, t.path, { name: t.name, onProgress: (f, b) => track(t, f, b), ctl: t.ctl, thumb, video, encrypt: t.enc })
         if (it) { S.items.unshift(it); S.fresh.add(it.id); if (thumb) { const u = URL.createObjectURL(thumb); S.thumbs.set(it.id, u); cache.putThumb(it.id, thumb); it.hasThumb = true } }
         t.state = 'done'; t.p = 1; t.bytes = t.size; render()
       } catch (e) { if (t.state !== 'fail') { t.state = 'fail'; t.err = errMsg(e) } }

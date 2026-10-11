@@ -50,10 +50,10 @@ function bind() {
   const upMenu = (e) => {
     const r = e.currentTarget.getBoundingClientRect(); upFrom = centerOf(e.currentTarget)
     const enc = e2eAuto()
-    const m = menu(r.right - 240, r.bottom + 8, `<button data-u="f">${I.upload}<span>Upload Files</span><kbd>U</kbd></button><button data-u="d">${I.drive}<span>Upload Folder</span></button><button data-u="n">${I.folderPlus}<span>New Folder</span><kbd>N</kbd></button><hr><button data-u="e" class="${enc ? 'on' : ''}">${enc ? I.lock : I.unlock}<span>End-to-end encryption</span><em>${enc ? 'On' : 'Off'}</em></button>`,
+    const m = menu(r.right - 240, r.bottom + 8, `<button data-u="f">${I.upload}<span>Upload Files</span><kbd>U</kbd></button><button data-u="d">${I.drive}<span>Upload Folder</span></button><button data-u="n">${I.folderPlus}<span>New Folder</span><kbd>N</kbd></button><button data-u="t">${I.note}<span>New Text File</span><kbd>T</kbd></button>${touch() ? `<button data-u="c">${I.camera}<span>Take Photo or Video</span></button>` : ''}<hr><button data-u="e" class="${enc ? 'on' : ''}">${enc ? I.lock : I.unlock}<span>End-to-end encryption</span><em>${enc ? 'On' : 'Off'}</em></button>`,
       async (b) => {
         const u = b.dataset.u
-        if (u === 'f') pick(); else if (u === 'd') $('#fdp').click(); else if (u === 'n') newFolder()
+        if (u === 'f') pick(); else if (u === 'd') $('#fdp').click(); else if (u === 'n') newFolder(); else if (u === 't') newTextFile(); else if (u === 'c') $('#fcam').click()
         else if (u === 'e') { if (enc) { localStorage.setItem('tc.e2e', '0'); toast('Encryption off for new uploads', 'lock') } else if (!tg.vault) setupE2E(); else if (await unlockFlow()) { localStorage.setItem('tc.e2e', '1'); toast('New uploads will be encrypted', 'lock') } }
       })
     if (r.bottom + m.offsetHeight + 16 > innerHeight) { m.style.top = r.top - m.offsetHeight - 10 + 'px'; m.style.transformOrigin = 'bottom right' }
@@ -61,6 +61,8 @@ function bind() {
   $('#up').onclick = upMenu; $('#fab').onclick = upMenu
   const target = () => (S.view === 'drive' ? S.path : '/')
   $('#fp').onchange = (e) => { enqueueUploads([...e.target.files].map((file) => ({ file, path: target() })), upFrom || { x: innerWidth / 2, y: innerHeight / 2 }); e.target.value = '' }
+  if (!$('#fcam')) { const i = document.createElement('input'); i.type = 'file'; i.id = 'fcam'; i.accept = 'image/*,video/*'; i.capture = 'environment'; i.hidden = true; document.body.append(i) }
+  $('#fcam').onchange = (e) => { const f = e.target.files[0]; if (f) { const n = f.name && f.name !== 'image.jpg' ? f.name : `Photo ${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.jpg`; enqueueUploads([{ file: new File([f], n, { type: f.type, lastModified: Date.now() }), path: target() }], { x: innerWidth / 2, y: innerHeight - 80 }) } e.target.value = '' }
   $('#fdp').onchange = (e) => {
     const base = target(); const list = []
     for (const f of e.target.files) { const rel = (f.webkitRelativePath || f.name).split('/'); const dir = join(base, rel.slice(0, -1).join('/')); list.push({ file: f, path: dir }); let p = dir; while (p !== base && p !== '/') { list.push({ dir: p }); p = parentOf(p) } }
@@ -74,7 +76,7 @@ function bind() {
   $('#cachel') && ($('#cachel').onclick = () => go({ view: 'settings' }, 'fwd'))
   c.onclick = (e) => {
     const a = e.target.closest('[data-a]')
-    if (a) { const v = a.dataset.a; if (v === 'upload') { upFrom = centerOf(a); pick() } else if (v === 'newfolder' || v === 'newfolder-root') newFolder(); else if (v === 'empty') { const t = S.items.filter((i) => i.d); t.length && purge(t) } else if (v === 'unlock') unlockFlow(); else if (v === 'e2e') setupE2E().then(() => S.view === 'settings' && settingsView()); else if (v === 'lockv') { E.lock().then(() => { S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file'; S.thumbs.delete(i.id) } }); dropBlobs(); toast('Locked', 'lock'); render() }) } else if (v === 'e2epass') changePass(); else if (v === 'keys') showKeys(); return }
+    if (a) { const v = a.dataset.a; if (v === 'upload') { upFrom = centerOf(a); pick() } else if (v === 'newfolder' || v === 'newfolder-root') newFolder(); else if (v === 'restoreall') restoreAll(); else if (v === 'dups') findDups(); else if (v === 'reload') { const t = toast('Refreshing…', 'busy', 0); refresh().finally(() => { t.close(); toast('Up to date'); S.view === 'settings' && settingsView() }) } else if (v === 'empty') { const t = S.items.filter((i) => i.d); t.length && purge(t) } else if (v === 'unlock') unlockFlow(); else if (v === 'e2e') setupE2E().then(() => S.view === 'settings' && settingsView()); else if (v === 'lockv') { E.lock().then(() => { S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file'; S.thumbs.delete(i.id) } }); dropBlobs(); toast('Locked', 'lock'); render() }) } else if (v === 'e2epass') changePass(); else if (v === 'keys') showKeys(); return }
     const pz = e.target.closest('[data-pz]'); if (pz) { S.pz = Math.min(8, Math.max(2, S.pz - +pz.dataset.pz)); localStorage.setItem('tc.pz', S.pz); $$('.photos', c).forEach((p) => p.style.setProperty('--cols', pcols())); return }
     const cb = e.target.closest('[data-cat]'); if (cb) { go({ view: 'cat', cat: cb.dataset.cat }, 'fwd'); return }
     if (e.target.closest('[data-occ]')) { (async () => { const l = await cache.list(); if (!(await confirmBox('Delete all cache?', `${fmtSize(l.reduce((a, b) => a + b.size, 0))} saved on this device will be removed. Your cloud files are not deleted.`, 'Delete cache', true))) return; await cache.clearAll(); S.thumbs.forEach((u) => URL.revokeObjectURL(u)); S.thumbs.clear(); dropBlobs(); S.cached.clear(); toast('Cache deleted · your cloud files are untouched'); updateCacheLabel(); render() })(); return }
@@ -134,6 +136,8 @@ function bind() {
     else if (e.key === '/') { e.preventDefault(); $('#q').focus() }
     else if (e.key === '?') showKeys()
     else if (!mod && e.key.toLowerCase() === 'n' && S.view !== 'settings') newFolder()
+    else if (!mod && e.key.toLowerCase() === 't' && S.view !== 'settings') newTextFile()
+    else if (mod && e.key.toLowerCase() === 'd' && items.length) { e.preventDefault(); copyItems(items) }
     else if (!mod && e.key.toLowerCase() === 'u') { upFrom = centerOf($('#up')); pick() }
     else if (e.key.startsWith('Arrow') && S._vis && S._vis.length) {
       e.preventDefault()
@@ -185,7 +189,8 @@ async function start() {
     await tg.getMe(); await tg.ensureChannel()
     shell(); S.hist = [navState()]; S.hi = 0; history.replaceState({ hi: 0 }, '')
     render(); cache.enforce().finally(updateCacheLabel); setupSW(); await refresh()
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !S.transfers.some(active) && !document.querySelector('.viewer,.modal-bg')) refresh() })
+    let lastSync = Date.now()
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastSync > 90e3 && !S.loading && !S.transfers.some(active) && !document.querySelector('.viewer,.modal-bg')) { lastSync = Date.now(); refresh() } })
   } catch (e) {
     document.body.innerHTML = `${WALL}<div class="empty"><div>${logo(64)}<h3>Couldn't connect to Telegram</h3><div>${esc(errMsg(e))}</div><div class="btns"><button class="btn primary" onclick="location.reload()">Try again</button></div></div></div>`
   }

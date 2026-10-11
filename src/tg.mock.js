@@ -25,7 +25,9 @@ export async function openItem(it) { return it }
 export async function editItem() {} export async function createFolder(path) { return { kind: 'folder', id: Math.floor(Math.random() * 1e6), path, d: 0, date: now } } export async function deleteIds() {}
 export async function saveVault() {} export async function sendToSaved() {}
 export const MAX_SIZE = () => 2e9
-export async function uploadFile(file, path, { onProgress, ctl, encrypt }) { const n = 400; for (let i = 1; i <= n; i++) { await new Promise((r) => setTimeout(r, 60)); while (ctl && ctl.paused) await new Promise((r) => setTimeout(r, 200)); onProgress(i / n, (file.size * i) / n) } return F(Math.floor(Math.random() * 1e6), file.name, path, file.size, file.type, { enc: encrypt }) }
+export async function uploadFile(file, path, { onProgress = () => {}, ctl, encrypt, name } = {}) { const n = file.size < 50000 ? 5 : 400; for (let i = 1; i <= n; i++) { await new Promise((r) => setTimeout(r, 60)); while (ctl && ctl.paused) await new Promise((r) => setTimeout(r, 200)); onProgress(i / n, (file.size * i) / n) } const o = F(Math.floor(Math.random() * 1e6), name || file.name, path, file.size, file.type, { enc: encrypt }); o.blob = file; return o }
+export async function copyItem(it, patch = {}) { return { ...it, id: Math.floor(Math.random() * 1e6), fav: false, d: 0, ...patch } }
+export async function replaceFile(it, file) { const o = { ...it, id: Math.floor(Math.random() * 1e6), size: file.size, blob: file }; return o }
 function art(hue, w = 480, h = 360) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d')
   const sky = g.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, `hsl(${hue},75%,62%)`); sky.addColorStop(1, `hsl(${(hue + 40) % 360},80%,78%)`); g.fillStyle = sky; g.fillRect(0, 0, w, h)
@@ -34,9 +36,9 @@ function art(hue, w = 480, h = 360) {
   return new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85))
 }
 export async function downloadThumb(it) { await new Promise((r) => setTimeout(r, 150 + Math.random() * 300)); return it.hue != null ? art(it.hue) : null }
-export async function downloadBlob(it, onProgress) { if (it.hue != null) { for (let i = 1; i <= 5; i++) { await new Promise((r) => setTimeout(r, 120)); onProgress && onProgress(i / 5, it.size * i / 5) } return art(it.hue, 1600, 1100) } return new Blob(['# Notes\n\nTeleCloud demo file.\n'], { type: it.mime }) }
-export async function* downloadChunks() { yield new Uint8Array(10) }
-export async function readRange(it, s, e) { return new TextEncoder().encode('# Research notes\n\n- Intrusion detection with NIDS dataset\n- Compare RF vs XGBoost\n- Write chapter 3\n\nconst model = train(data, { epochs: 20 })\n') }
+export async function downloadBlob(it, onProgress) { if (it.blob) return it.blob; if (it.hue != null) { for (let i = 1; i <= 5; i++) { await new Promise((r) => setTimeout(r, 120)); onProgress && onProgress(i / 5, it.size * i / 5) } return art(it.hue, 1600, 1100) } return new Blob(['# Notes\n\nTeleCloud demo file.\n'], { type: it.mime }) }
+export async function* downloadChunks(it) { yield it.blob ? new Uint8Array(await it.blob.arrayBuffer()) : new TextEncoder().encode('demo file ' + it.name + '\n') }
+export async function readRange(it, s, e) { if (it.blob) return new Uint8Array(await it.blob.slice(s, e + 1).arrayBuffer()); return new TextEncoder().encode('# Research notes\n\n- Intrusion detection with NIDS dataset\n- Compare RF vs XGBoost\n- Write chapter 3\n\nconst model = train(data, { epochs: 20 })\n') }
 export async function logout() {} export async function qrLogin() { return new Promise(() => {}) } export async function sendCode() {} export async function signIn() {} export async function passwordHint() {} export async function checkPassword() {}
 ;(async () => {
   if (localStorage.getItem('mockseed4')) return; localStorage.setItem('mockseed4', '1')

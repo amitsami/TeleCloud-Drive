@@ -59,6 +59,13 @@ export const I = {
   select: s('<circle cx="12" cy="12" r="9"/><path d="m8 12.2 2.8 2.8L16.2 9.6"/>'),
   ext: s('<path d="M14 4.5h5.5V10M19.5 4.5 11 13M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/>'),
   telegram: `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M21.9 4.6 18.8 19.4c-.2 1-.8 1.3-1.7.8l-4.6-3.4-2.2 2.1c-.3.3-.5.5-1 .5l.3-4.7 8.6-7.8c.4-.3-.1-.5-.6-.2L6.9 13.4 2.3 12c-1-.3-1-1 .2-1.5L20.5 3.6c.8-.3 1.6.2 1.4 1z"/></svg>`,
+  copy: s('<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>'),
+  refresh: s('<path d="M20 11a8 8 0 0 0-14.6-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16M20 20v-4h-4"/>'),
+  zip: s('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M10 5h1M10 8h1M10 11h1M9.5 14h2a.5.5 0 0 1 .5.5V17a1.5 1.5 0 0 1-3 0v-2.5a.5.5 0 0 1 .5-.5z"/>'),
+  camera: s('<path d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/>'),
+  note: s('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>'),
+  slides: s('<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M10 9.5v5l4.5-2.5z" fill="currentColor"/>'),
+  save: s('<path d="M5 4h11l3 3v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>'),
 }
 
 export const logo = (size = 36) => { const g = "lg" + Math.random().toString(36).slice(2, 8); return `<svg width="${size}" height="${size}" viewBox="0 0 64 64"><defs><linearGradient id="${g}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5AB8FF"/><stop offset="1" stop-color="#2A6FE8"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#${g})"/><path d="M20 44a9 9 0 0 1-1.2-17.9A12 12 0 0 1 42 25a9.5 9.5 0 0 1-1 19z" fill="#fff"/><path d="m27 36 9-5.5-2.6 9-2.2-2.6-2.4 1.6.3-3.3z" fill="#2A6FE8"/></svg>` }

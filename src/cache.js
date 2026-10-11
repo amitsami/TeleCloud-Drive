@@ -81,3 +81,25 @@ export async function enforce() {
 export async function estimate() { try { return await navigator.storage.estimate() } catch { return {} } }
 // remove the old v1 cache database
 try { indexedDB.deleteDatabase('telecloud') } catch {}
+
+/** Breakdown of everything this site stores in the browser (Chrome reports details). */
+export async function storageDetails() {
+  const est = await estimate(); const d = est.usageDetails || {}
+  let shell = 0
+  try { for (const k of await caches.keys()) { const c = await caches.open(k); for (const r of await c.keys()) { const res = await c.match(r); const b = res && (await res.clone().blob()); shell += b ? b.size : 0 } } } catch {}
+  return { usage: est.usage || 0, quota: est.quota || 0, idb: d.indexedDB, caches: d.caches ?? shell, sw: d.serviceWorkerRegistrations }
+}
+/** Delete everything the site keeps in the browser except the sign-in (and, optionally, the encryption key). Cloud files are never touched. */
+export async function wipeBrowserStorage({ keepKey = true } = {}) {
+  await clearAll().catch(() => {})
+  try { for (const k of await caches.keys()) await caches.delete(k) } catch {}
+  try {
+    const keep = new Set([DB, ...(keepKey ? ['telecloud-keys'] : [])])
+    const dbs = indexedDB.databases ? await indexedDB.databases() : []
+    await Promise.all(dbs.filter((d) => d.name && !keep.has(d.name)).map((d) => new Promise((r) => { const q = indexedDB.deleteDatabase(d.name); q.onsuccess = q.onerror = q.onblocked = () => r() })))
+  } catch {}
+  for (const k of Object.keys(localStorage)) if (!k.startsWith('tc.')) localStorage.removeItem(k)
+  try { sessionStorage.clear() } catch {}
+}
+export async function persisted() { try { return await navigator.storage.persisted() } catch { return false } }
+export async function persist() { try { return await navigator.storage.persist() } catch { return false } }
