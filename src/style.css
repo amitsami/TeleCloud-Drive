@@ -955,3 +955,16 @@ html[data-theme=dark] .share-hero{background:linear-gradient(120deg,rgba(40,50,1
 .nav button .tile,.sb .tile{flex:none!important;width:26px!important;overflow:visible!important}
 .tile svg,.nav button .tile svg{color:#fff!important}
 .tile svg g{opacity:.35!important}
+/* phone footer: classic clean look in the new colors */
+@media (max-width:760px){
+  .tabbar svg g,.fab svg g{display:none}
+  .tabbar button svg{width:24px;height:24px;stroke-width:1.9}
+  .tabbar button{font-size:10.5px;font-weight:560;color:var(--t1)}
+  .tabbar button.on{color:var(--a);font-weight:620}
+  .tab-ind{background:rgba(97,89,232,.14)!important;border-radius:26px!important}
+  .fab{background:rgba(255,255,255,.62)!important;color:var(--a)!important;box-shadow:0 10px 30px -10px rgba(60,50,120,.35),inset 0 1px 0 rgba(255,255,255,.9),inset 0 0 0 .5px rgba(255,255,255,.7)!important}
+  .fab svg{stroke-width:2.4}
+  html[data-theme=dark] .fab{background:rgba(40,36,60,.6)!important;color:#A9A3FF!important;box-shadow:0 10px 30px -10px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.12)!important}
+  html[data-theme=dark] .tab-ind{background:rgba(169,163,255,.16)!important}
+  html[data-theme=dark] .tabbar button.on{color:#A9A3FF}
+}
