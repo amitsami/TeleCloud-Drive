@@ -968,3 +968,15 @@ html[data-theme=dark] .share-hero{background:linear-gradient(120deg,rgba(40,50,1
   html[data-theme=dark] .tab-ind{background:rgba(169,163,255,.16)!important}
   html[data-theme=dark] .tabbar button.on{color:#A9A3FF}
 }
+/* phones & touch: keep it light so scrolling stays smooth */
+@media (hover:none),(pointer:coarse),(max-width:760px){
+  body::before,body::after{display:none!important}
+  .card,.row,.cat,.qcard,.scard,.share-card,.hero,.share-hero,.srow,.set-card,.e2e-card,.q-card{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+  .glass:not(.tabbar):not(.fab):not(.topbar):not(.modal):not(.ctx):not(.selbar){-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+  .tabbar,.fab,.topbar,.selbar,.ctx{-webkit-backdrop-filter:blur(18px) saturate(170%)!important;backdrop-filter:blur(18px) saturate(170%)!important}
+  .modal{-webkit-backdrop-filter:blur(24px) saturate(160%)!important;backdrop-filter:blur(24px) saturate(160%)!important}
+  .modal-bg{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;background:rgba(30,24,60,.28)!important}
+  #content [data-k]{content-visibility:auto;contain-intrinsic-size:auto 180px}
+  #content .row[data-k]{contain-intrinsic-size:auto 60px}
+  .card,.row{transition:transform .2s ease!important}
+}

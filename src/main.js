@@ -130,7 +130,7 @@ function authScreen() {
       <input class="field" id="pw" type="password" placeholder="Password${hint ? ' (hint: ' + esc(hint) + ')' : ''}" autocomplete="current-password" autofocus>
       <button class="btn primary lg" id="go">Continue</button>`)
     const go = async () => { err(); $('#go').disabled = true; $('#go').classList.add('loading'); try { await tg.checkPassword($('#pw').value); done() } catch (e) { err(e); $('#go').disabled = false; $('#go').classList.remove('loading') } }
-    $('#go').onclick = go; $('#pw').onkeydown = (e) => e.key === 'Enter' && go(); $('#pw').focus()
+    $('#go').onclick = go; $('#pw').onkeydown = (e) => { if (e.key === 'Enter') go() }; $('#pw').focus()
   }
   const qr = async () => {
     cancelQr = false
@@ -158,10 +158,10 @@ function authScreen() {
           err(); $('#go').disabled = true; $('#go').classList.add('loading')
           try { const r = await tg.signIn(num, phoneCodeHash, $('#cd').value.trim()); r === 'ok' ? done() : askPassword() } catch (e) { err(e); $('#go').disabled = false; $('#go').classList.remove('loading') }
         }
-        $('#go').onclick = signin; $('#cd').oninput = (e) => e.target.value.trim().length >= 5 && signin(); $('#cd').focus()
+        $('#go').onclick = signin; $('#cd').oninput = (e) => { if (e.target.value.replace(/\D/g, '').length >= 5) signin() }; $('#cd').focus()
       } catch (e) { err(e); $('#go').disabled = false; $('#go').classList.remove('loading') }
     }
-    $('#go').onclick = send; $('#ph').onkeydown = (e) => e.key === 'Enter' && send(); $('#ph').focus()
+    $('#go').onclick = send; $('#ph').onkeydown = (e) => { if (e.key === 'Enter') send() }; $('#ph').focus()
   }
   $$('#aseg button').forEach((b) => b.onclick = () => {
     $$('#aseg button').forEach((x) => x.classList.toggle('on', x === b)); placeSeg($('#aseg')); err()
@@ -803,15 +803,18 @@ function refreshBadges() {
 
 /* ---------- modals & sheets ---------- */
 function modal(html, onMount, cls = '') {
-  const bg = document.createElement('div'); bg.className = 'modal-bg'; bg.innerHTML = `<div class="modal glass ${cls}"><span class="grab"></span>${html}</div>`
+  const bg = document.createElement('div'); bg.className = 'modal-bg'; bg.innerHTML = `<div class="modal glass ${cls}" tabindex="-1" role="dialog" aria-modal="true"><span class="grab"></span>${html}</div>`
+  const md = bg.firstElementChild
   document.body.append(bg); requestAnimationFrame(() => bg.classList.add('in'))
   let closed = false
-  const close = () => { if (closed) return; closed = true; bg.classList.remove('in'); bg.classList.add('out'); setTimeout(() => bg.remove(), 340); bg._onclose && bg._onclose() }
+  const onEsc = (e) => { if (e.key === 'Escape' && bg === [...document.querySelectorAll('.modal-bg:not(.out)')].pop()) { e.stopPropagation(); close() } }
+  const close = () => { if (closed) return; closed = true; document.removeEventListener('keydown', onEsc, true); bg.classList.remove('in'); bg.classList.add('out'); setTimeout(() => bg.remove(), 340); bg._onclose && bg._onclose() }
   bg._close = close
-  bg.onmousedown = (e) => e.target === bg && close()
-  bg.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); close() } })
+  bg.onmousedown = (e) => { if (e.target === bg) close() }
+  document.addEventListener('keydown', onEsc, true)
+  setTimeout(() => { if (!bg.contains(document.activeElement)) (bg.querySelector('input,textarea,button.primary') || md).focus({ preventScroll: true }) }, 60)
   // swipe down to dismiss (sheets on phones)
-  const md = $('.modal', bg); let y0 = null, dy = 0
+  let y0 = null, dy = 0
   md.addEventListener('touchstart', (e) => { if (md.scrollTop <= 0 && !e.target.closest('input,textarea,.tree')) { y0 = e.touches[0].clientY; dy = 0; md.style.transition = 'none' } }, { passive: true })
   md.addEventListener('touchmove', (e) => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); md.style.transform = `translateY(${dy}px)` }, { passive: true })
   md.addEventListener('touchend', () => { if (y0 == null) return; md.style.transition = ''; md.style.transform = ''; if (dy > 110) close(); y0 = null })
@@ -822,7 +825,7 @@ function promptBox(title, label, value, okText = 'Save') {
     const i = $('#pv', bg); setTimeout(() => { i.focus(); const dot = value.lastIndexOf('.'); i.setSelectionRange(0, dot > 0 ? dot : value.length) }, 60)
     let v = null; bg._onclose = () => res(v)
     const ok = () => { const x = i.value.trim().replace(/\//g, '-'); if (!x) return; v = x; close() }
-    $('#o', bg).onclick = ok; i.onkeydown = (e) => e.key === 'Enter' && ok(); $('#c', bg).onclick = close
+    $('#o', bg).onclick = ok; i.onkeydown = (e) => { if (e.key === 'Enter') ok() }; $('#c', bg).onclick = close
   }))
 }
 function confirmBox(title, text, okText, danger) {
@@ -887,7 +890,7 @@ function unlockFlow(title = 'Unlock encrypted files') {
       try { await E.unlock(tg.vault.rec, p1.value, $('#keep', bg).checked); await decryptAll(); v = true; close(); toast('Unlocked', 'lock'); render() }
       catch (e) { const er = $('#perr', bg); er.textContent = errMsg(e); er.classList.remove('shake'); void er.offsetWidth; er.classList.add('shake'); $('.modal', bg).animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-8px)' }, { transform: 'translateX(8px)' }, { transform: 'translateX(0)' }], { duration: 300 }); b.disabled = false; b.classList.remove('loading'); p1.select() }
     }
-    $('#o', bg).onclick = go; p1.onkeydown = (e) => e.key === 'Enter' && go(); $('#c', bg).onclick = close
+    $('#o', bg).onclick = go; p1.onkeydown = (e) => { if (e.key === 'Enter') go() }; $('#c', bg).onclick = close
   }))
 }
 function changePass() {
@@ -1442,7 +1445,7 @@ async function joinFlow(pre = '') {
       } catch (e) { if (my === seq) pk.innerHTML = `<div class="warn">${esc(errMsg(e))}</div>` }
     }
     i.oninput = () => { clearTimeout(t); t = setTimeout(check, 350) }; if (pre) check()
-    ok.onclick = () => { v = i.value.trim(); close() }; i.onkeydown = (e) => e.key === 'Enter' && !ok.disabled && ok.click(); $('#c', bg).onclick = close
+    ok.onclick = () => { v = i.value.trim(); close() }; i.onkeydown = (e) => { if (e.key === 'Enter' && !ok.disabled) ok.click() }; $('#c', bg).onclick = close
     setTimeout(() => i.focus(), 80)
   }))
   if (!code) return
@@ -1525,7 +1528,10 @@ function checkJoinLink() {
 function liquid() {
   if (liquid.done) return; liquid.done = true
   let raf = 0, last = null
+  const fine = matchMedia('(hover: hover) and (pointer: fine)').matches
+  if (!fine) return
   document.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return
     last = e; if (raf) return
     raf = requestAnimationFrame(() => {
       raf = 0; const g = last.target.closest && last.target.closest('.glass'); if (!g) return

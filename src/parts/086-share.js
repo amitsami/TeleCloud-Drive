@@ -62,7 +62,7 @@ async function joinFlow(pre = '') {
       } catch (e) { if (my === seq) pk.innerHTML = `<div class="warn">${esc(errMsg(e))}</div>` }
     }
     i.oninput = () => { clearTimeout(t); t = setTimeout(check, 350) }; if (pre) check()
-    ok.onclick = () => { v = i.value.trim(); close() }; i.onkeydown = (e) => e.key === 'Enter' && !ok.disabled && ok.click(); $('#c', bg).onclick = close
+    ok.onclick = () => { v = i.value.trim(); close() }; i.onkeydown = (e) => { if (e.key === 'Enter' && !ok.disabled) ok.click() }; $('#c', bg).onclick = close
     setTimeout(() => i.focus(), 80)
   }))
   if (!code) return
@@ -145,7 +145,10 @@ function checkJoinLink() {
 function liquid() {
   if (liquid.done) return; liquid.done = true
   let raf = 0, last = null
+  const fine = matchMedia('(hover: hover) and (pointer: fine)').matches
+  if (!fine) return
   document.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return
     last = e; if (raf) return
     raf = requestAnimationFrame(() => {
       raf = 0; const g = last.target.closest && last.target.closest('.glass'); if (!g) return

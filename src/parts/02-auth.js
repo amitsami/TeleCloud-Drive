@@ -31,7 +31,7 @@ function authScreen() {
       <input class="field" id="pw" type="password" placeholder="Password${hint ? ' (hint: ' + esc(hint) + ')' : ''}" autocomplete="current-password" autofocus>
       <button class="btn primary lg" id="go">Continue</button>`)
     const go = async () => { err(); $('#go').disabled = true; $('#go').classList.add('loading'); try { await tg.checkPassword($('#pw').value); done() } catch (e) { err(e); $('#go').disabled = false; $('#go').classList.remove('loading') } }
-    $('#go').onclick = go; $('#pw').onkeydown = (e) => e.key === 'Enter' && go(); $('#pw').focus()
+    $('#go').onclick = go; $('#pw').onkeydown = (e) => { if (e.key === 'Enter') go() }; $('#pw').focus()
   }
   const qr = async () => {
     cancelQr = false
@@ -59,10 +59,10 @@ function authScreen() {
           err(); $('#go').disabled = true; $('#go').classList.add('loading')
           try { const r = await tg.signIn(num, phoneCodeHash, $('#cd').value.trim()); r === 'ok' ? done() : askPassword() } catch (e) { err(e); $('#go').disabled = false; $('#go').classList.remove('loading') }
         }
-        $('#go').onclick = signin; $('#cd').oninput = (e) => e.target.value.trim().length >= 5 && signin(); $('#cd').focus()
+        $('#go').onclick = signin; $('#cd').oninput = (e) => { if (e.target.value.replace(/\D/g, '').length >= 5) signin() }; $('#cd').focus()
       } catch (e) { err(e); $('#go').disabled = false; $('#go').classList.remove('loading') }
     }
-    $('#go').onclick = send; $('#ph').onkeydown = (e) => e.key === 'Enter' && send(); $('#ph').focus()
+    $('#go').onclick = send; $('#ph').onkeydown = (e) => { if (e.key === 'Enter') send() }; $('#ph').focus()
   }
   $$('#aseg button').forEach((b) => b.onclick = () => {
     $$('#aseg button').forEach((x) => x.classList.toggle('on', x === b)); placeSeg($('#aseg')); err()
