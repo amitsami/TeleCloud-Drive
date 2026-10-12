@@ -106,7 +106,7 @@ function changePass() {
 }
 async function decryptAll() {
   if (!E.unlocked()) return
-  for (const it of S.items) if (it.enc && it.locked) { try { await tg.openItem(it, tg.thumbMsgs) } catch {} }
+  for (const it of itemsOf('')) if (it.enc && it.locked) { try { await tg.openItem(it, tg.thumbMsgs) } catch {} }
 }
 
 /* ---------- keyboard shortcuts ---------- */

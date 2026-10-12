@@ -18,13 +18,20 @@ const LS_CHANNEL = 'tc.channel'
 
 export let client = null
 let peer = null, inputChannel = null
+/* spaces: '' = your private drive channel; other keys = shared folders (supergroups) */
+const spaces = new Map()
+const SP = (src) => spaces.get(src || '') || { peer, inputChannel }
+const BASE = 1e10
+export const mid = (id) => (typeof id === 'number' ? id % BASE : id)
+const sidx = () => JSON.parse(localStorage.getItem('tc.sidx') || '{}')
+function baseFor(chId) { const m = sidx(); if (!m[chId]) { m[chId] = Object.keys(m).length + 1; localStorage.setItem('tc.sidx', JSON.stringify(m)) } return m[chId] * BASE }
 export let me = null
 
 export async function initClient() {
   const s = localStorage.getItem(LS_SESSION) || ''
   client = new TelegramClient(new StringSession(s), API_ID, API_HASH, {
     connectionRetries: 10, useWSS: true, autoReconnect: true,
-    deviceModel: 'TeleCloud Web', appVersion: '3.5', systemVersion: navigator.platform || 'Web',
+    deviceModel: 'TeleCloud Web', appVersion: '4.0', systemVersion: navigator.platform || 'Web',
   })
   client.setLogLevel('none')
   await client.connect()
@@ -129,11 +136,17 @@ export async function ensureChannel() {
   localStorage.setItem(LS_CHANNEL, JSON.stringify({ id: ch.id.toString(), hash: ch.accessHash.toString() }))
   peer = new Api.InputPeerChannel({ channelId: ch.id, accessHash: ch.accessHash })
   inputChannel = new Api.InputChannel({ channelId: ch.id, accessHash: ch.accessHash })
+  spaces.set('', { peer, inputChannel, base: 0 })
   return ch
 }
 
 /* ---------- parsing ---------- */
-function parse(m) {
+function parse(m, src = '') {
+  const it = parse0(m); if (!it) return null
+  const sp = spaces.get(src || ''); if (sp && sp.base) { it.id = sp.base + it.id } if (src) { it.src = src; it.mine = !!(m.out || (m.fromId && me && String(m.fromId.userId) === String(me.id))) }
+  return it
+}
+function parse0(m) {
   if (!m || m.className !== 'Message') return null
   const text = m.message || ''
   if (text.startsWith(FOLDER)) {
@@ -197,10 +210,11 @@ const folderText = (f) => FOLDER + JSON.stringify(f.d ? { p: f.path, d: f.d } : 
 
 export const thumbMsgs = new Map()
 export let vault = null // { id (message id), rec }
-export async function listAll(onProgress) {
-  const out = []; thumbMsgs.clear(); vault = null
-  for await (const m of client.iterMessages(peer, { limit: undefined, waitTime: 0 })) {
-    const it = parse(m); if (!it) continue
+export async function listAll(onProgress, src = '') {
+  const out = []; if (!src) { thumbMsgs.clear(); vault = null }
+  for await (const m of client.iterMessages(SP(src).peer, { limit: undefined, waitTime: 0 })) {
+    const it = parse(m, src); if (!it) continue
+    if (src && (it.kind === 'ethumb' || it.kind === 'vault' || it.enc)) continue
     if (it.kind === 'ethumb') { thumbMsgs.set(it.id, it.msg); continue }
     if (it.kind === 'vault') { if (!vault) vault = { id: it.id, rec: it.rec }; continue }
     out.push(it)
@@ -216,34 +230,43 @@ function newMsgFrom(updates) {
 }
 
 /* ---------- mutations ---------- */
-export async function createFolder(path) {
-  const r = await call(new Api.messages.SendMessage({ peer, message: folderText({ path }), randomId: generateRandomLong(), noWebpage: true, silent: true }))
-  return parse(newMsgFrom(r)) || { kind: 'folder', id: Date.now(), path, d: 0, date: Date.now() / 1000 }
+export async function createFolder(path, src = '') {
+  const r = await call(new Api.messages.SendMessage({ peer: SP(src).peer, message: folderText({ path }), randomId: generateRandomLong(), noWebpage: true, silent: true }))
+  return parse(newMsgFrom(r), src) || { kind: 'folder', id: Date.now(), path, d: 0, date: Date.now() / 1000, src }
 }
 export async function editItem(it) {
   const message = it.kind === 'folder' ? folderText(it) : await caption(it)
-  try { await call(new Api.messages.EditMessage({ peer, id: it.id, message, noWebpage: true })) }
-  catch (e) { if (e.errorMessage !== 'MESSAGE_NOT_MODIFIED') throw e }
+  try { await call(new Api.messages.EditMessage({ peer: SP(it.src).peer, id: mid(it.id), message, noWebpage: true })) }
+  catch (e) {
+    if (e.errorMessage === 'MESSAGE_NOT_MODIFIED') return
+    if (/MESSAGE_AUTHOR_REQUIRED|MESSAGE_EDIT_TIME_EXPIRED|CHAT_ADMIN_REQUIRED/.test(e.errorMessage || '')) throw new Error('Only the person who added this item can change it')
+    throw e
+  }
 }
 /** Make a server-side copy of a file (no re-upload). patch = { name, path } */
 export async function copyItem(it, patch = {}) {
-  const r = await call(new Api.messages.ForwardMessages({ fromPeer: peer, id: [it.id], toPeer: peer, randomId: [generateRandomLong()], dropAuthor: true, silent: true }))
+  const to = patch.src !== undefined ? patch.src : it.src
+  const r = await call(new Api.messages.ForwardMessages({ fromPeer: SP(it.src).peer, id: [mid(it.id)], toPeer: SP(to).peer, randomId: [generateRandomLong()], dropAuthor: true, silent: true }))
   const m = newMsgFrom(r); if (!m) throw new Error('Copy failed')
-  const out = { ...it, id: m.id, msg: m, fav: false, d: 0, date: m.date, ...patch }
+  const out = { ...it, ...parse(m, to), name: it.name, mime: it.mime, enc: it.enc, sec: it.sec, locked: false, fav: false, d: 0, ...patch, src: to || undefined }
+  if (!to) delete out.src
   delete out.x; await editItem(out)
   return out
 }
 /** Replace a file's contents: upload the new version, then remove the old message. */
 export async function replaceFile(it, file) {
-  const out = await uploadFile(file, it.path, { encrypt: !!it.enc, name: it.name })
+  const out = await uploadFile(file, it.path, { encrypt: !!it.enc, name: it.name, src: it.src })
   if (!out) throw new Error('Upload failed')
   if (it.fav) { out.fav = true; await editItem(out) }
-  await deleteIds([it.id])
+  await deleteIds([it.id], it.src)
   return out
 }
-export async function deleteIds(ids) {
-  for (let i = 0; i < ids.length; i += 100)
-    await call(new Api.channels.DeleteMessages({ channel: inputChannel, id: ids.slice(i, i + 100) }))
+export async function deleteIds(ids, src = '') {
+  ids = ids.map(mid)
+  for (let i = 0; i < ids.length; i += 100) {
+    const r = await call(new Api.channels.DeleteMessages({ channel: SP(src).inputChannel, id: ids.slice(i, i + 100) }))
+    if (src && r && r.ptsCount === 0 && ids.length) throw new Error('Only the person who added this item (or the folder owner) can delete it')
+  }
 }
 
 export async function saveVault(rec) {
@@ -253,8 +276,9 @@ export async function saveVault(rec) {
   vault.rec = rec
 }
 /** Send copies to the user's Saved Messages in Telegram. */
-export async function sendToSaved(ids) {
-  await call(new Api.messages.ForwardMessages({ fromPeer: peer, id: ids, toPeer: new Api.InputPeerSelf(), randomId: ids.map(() => generateRandomLong()), dropAuthor: true }))
+export async function sendToSaved(ids, src = '') {
+  ids = ids.map(mid)
+  await call(new Api.messages.ForwardMessages({ fromPeer: SP(src).peer, id: ids, toPeer: new Api.InputPeerSelf(), randomId: ids.map(() => generateRandomLong()), dropAuthor: true }))
 }
 
 /* ---------- upload (streams from disk, parallel parts) ---------- */
@@ -286,7 +310,9 @@ async function uploadParts(file, onProgress, ctl, sec) {
              : new Api.InputFile({ id: fileId, parts, name: file.name, md5Checksum: '' })
 }
 
-export async function uploadFile(file, path, { onProgress, ctl, thumb, video, encrypt, name } = {}) {
+export async function uploadFile(file, path, { onProgress, ctl, thumb, video, encrypt, name, src = '' } = {}) {
+  if (src) encrypt = false
+  const peer = SP(src).peer
   const fname = name || file.name
   const t = Math.floor((file.lastModified || Date.now()) / 1000)
   if (encrypt) {
@@ -319,7 +345,7 @@ export async function uploadFile(file, path, { onProgress, ctl, thumb, video, en
     forceFile: !video,
   })
   const r = await call(new Api.messages.SendMedia({ peer, media, message: await caption(it), randomId: generateRandomLong(), silent: true }))
-  return parse(newMsgFrom(r))
+  return parse(newMsgFrom(r), src)
 }
 
 /* ---------- download ---------- */
@@ -383,4 +409,98 @@ export async function downloadThumb(it, big) {
   const pick = big ? cands[cands.length - 1] : (cands.find((t) => t.type === 'm') || cands.find((t) => t.type === 'x') || cands[cands.length - 1])
   const b = await client.downloadMedia(it.msg, { thumb: pick })
   return b && b.length ? new Blob([b], { type: 'image/jpeg' }) : null
+}
+
+/* ---------- shared folders (Telegram supergroups + invite codes) ---------- */
+const SH_SUFFIX = ' · TeleCloud'
+const SH_ABOUT = 'TeleCloud shared folder · telecloud-share-v1'
+export const shares = new Map() // key -> { key, name, code, owner, count, ch }
+const codeOf = (link) => 'TC-' + String(link || '').split('/').pop().replace(/^\+/, '').replace(/^joinchat\//, '')
+const hashOf = (code) => String(code || '').trim().replace(/^https?:\/\/t\.me\/(\+|joinchat\/)?/i, '').replace(/^.*#join=/, '').replace(/^TC-/i, '').replace(/[^A-Za-z0-9_-]/g, '')
+function addSpace(ch) {
+  const key = 'c' + ch.id.toString()
+  if (!spaces.has(key)) spaces.set(key, { peer: new Api.InputPeerChannel({ channelId: ch.id, accessHash: ch.accessHash }), inputChannel: new Api.InputChannel({ channelId: ch.id, accessHash: ch.accessHash }), base: baseFor(ch.id.toString()) })
+  const sh = shares.get(key) || { key }
+  Object.assign(sh, { name: (ch.title || '').replace(SH_SUFFIX, '') || 'Shared folder', owner: !!ch.creator, admin: !!(ch.creator || ch.adminRights), count: ch.participantsCount || sh.count || 0, ch })
+  shares.set(key, sh); return sh
+}
+async function fillCode(sh) {
+  try {
+    const f = await call(new Api.channels.GetFullChannel({ channel: SP(sh.key).inputChannel }))
+    sh.count = f.fullChat.participantsCount || sh.count
+    const m = /TC-[A-Za-z0-9_-]+/.exec(f.fullChat.about || ''); if (m) sh.code = m[0]
+    if (!sh.code && f.fullChat.exportedInvite && f.fullChat.exportedInvite.link) sh.code = codeOf(f.fullChat.exportedInvite.link)
+  } catch {}
+  return sh
+}
+/** Find every shared folder you created or joined. */
+export async function loadShares() {
+  const found = new Set()
+  for await (const d of client.iterDialogs({ limit: 1000 })) {
+    const e = d.entity
+    if (e && e.className === 'Channel' && e.megagroup && !e.left && (e.title || '').endsWith(SH_SUFFIX)) { found.add(addSpace(e).key) }
+  }
+  for (const k of [...shares.keys()]) if (!found.has(k)) shares.delete(k)
+  await Promise.all([...shares.values()].filter((s) => !s.code).map(fillCode))
+  return [...shares.values()]
+}
+/** Create a shared folder. Returns the share (with its join code). */
+export async function createShare(name) {
+  const r = await call(new Api.channels.CreateChannel({ title: (name.slice(0, 100) + SH_SUFFIX).slice(0, 128), about: SH_ABOUT, megagroup: true }))
+  const ch = r.chats[0]; const sh = addSpace(ch); sh.owner = true; sh.admin = true
+  const ic = new Api.InputChannel({ channelId: ch.id, accessHash: ch.accessHash })
+  await call(new Api.channels.TogglePreHistoryHidden({ channel: ic, enabled: false })).catch(() => {})
+  const inv = await call(new Api.messages.ExportChatInvite({ peer: SP(sh.key).peer, title: 'TeleCloud' }))
+  sh.code = codeOf(inv.link)
+  await call(new Api.messages.EditChatAbout({ peer: SP(sh.key).peer, about: `${SH_ABOUT}\nJoin code: ${sh.code}` })).catch(() => {})
+  sh.count = 1
+  return sh
+}
+/** Look up a code without joining. */
+export async function peekShare(code) {
+  const hash = hashOf(code); if (hash.length < 6) throw new Error("That doesn't look like a TeleCloud code")
+  try {
+    const r = await call(new Api.messages.CheckChatInvite({ hash }))
+    const title = (r.title || (r.chat && r.chat.title) || '')
+    if (r.className === 'ChatInviteAlready' && r.chat) return { joined: true, name: title.replace(SH_SUFFIX, ''), count: r.chat.participantsCount || 0, key: 'c' + r.chat.id.toString() }
+    return { joined: false, name: title.replace(SH_SUFFIX, ''), count: r.participantsCount || 0, ok: title.endsWith(SH_SUFFIX) }
+  } catch (e) { if (/INVITE_HASH_(INVALID|EXPIRED)/.test(e.errorMessage || '')) throw new Error('This code is invalid or has been turned off'); throw e }
+}
+export async function joinShare(code) {
+  const hash = hashOf(code)
+  let ch
+  try { const r = await call(new Api.messages.ImportChatInvite({ hash })); ch = r.chats && r.chats[0] }
+  catch (e) {
+    if (e.errorMessage === 'USER_ALREADY_PARTICIPANT') { const r = await call(new Api.messages.CheckChatInvite({ hash })); ch = r.chat }
+    else if (e.errorMessage === 'INVITE_REQUEST_SENT') throw new Error('Join request sent — the owner needs to approve it')
+    else if (/INVITE_HASH_(INVALID|EXPIRED)/.test(e.errorMessage || '')) throw new Error('This code is invalid or has been turned off')
+    else throw e
+  }
+  if (!ch) throw new Error('Could not join this folder')
+  const sh = addSpace(ch); await fillCode(sh); if (!sh.code) sh.code = 'TC-' + hash
+  return sh
+}
+/** Owner only: turn off the old code and create a new one. */
+export async function resetShareCode(key) {
+  const sh = shares.get(key)
+  if (sh.code) await call(new Api.messages.EditExportedChatInvite({ peer: SP(key).peer, link: 'https://t.me/+' + hashOf(sh.code), revoked: true })).catch(() => {})
+  const inv = await call(new Api.messages.ExportChatInvite({ peer: SP(key).peer, title: 'TeleCloud' }))
+  sh.code = codeOf(inv.link)
+  await call(new Api.messages.EditChatAbout({ peer: SP(key).peer, about: `${SH_ABOUT}\nJoin code: ${sh.code}` })).catch(() => {})
+  return sh.code
+}
+export async function renameShare(key, name) { await call(new Api.channels.EditTitle({ channel: SP(key).inputChannel, title: (name.slice(0, 100) + SH_SUFFIX).slice(0, 128) })); shares.get(key).name = name }
+export async function leaveShare(key) {
+  const sh = shares.get(key)
+  if (sh && sh.owner) await call(new Api.channels.DeleteChannel({ channel: SP(key).inputChannel }))
+  else await call(new Api.channels.LeaveChannel({ channel: SP(key).inputChannel }))
+  shares.delete(key); spaces.delete(key)
+}
+export async function shareMembers(key) {
+  const r = await call(new Api.channels.GetParticipants({ channel: SP(key).inputChannel, filter: new Api.ChannelParticipantsRecent(), offset: 0, limit: 100, hash: bigInt(0) }))
+  return r.users.filter((u) => !u.bot).map((u) => ({ id: u.id.toString(), name: [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || 'Member', username: u.username || '', owner: r.participants.some((p) => p.className === 'ChannelParticipantCreator' && String(p.userId) === String(u.id)) }))
+}
+/** Your profile photo as a Blob (or null). */
+export async function myPhoto() {
+  try { if (!me || !me.photo) return null; const b = await client.downloadProfilePhoto('me', { isBig: false }); return b && b.length ? new Blob([b], { type: 'image/jpeg' }) : null } catch { return null }
 }

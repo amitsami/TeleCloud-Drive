@@ -7,7 +7,7 @@ async function busy(label, fn) {
 async function ensureFolderMsg(path) {
   const f = S.items.find((i) => i.kind === 'folder' && i.path === path && !i.d)
   if (f) return f
-  const nf = await tg.createFolder(path); S.items.unshift(nf); return nf
+  const nf = await tg.createFolder(path, S.space); S.items.unshift(nf); return nf
 }
 async function newFolder() {
   if (S.view !== 'drive') go({ view: 'drive', path: '/' }, 'fwd')
@@ -31,7 +31,7 @@ async function rename(it) {
 }
 async function moveFolder(from, to, label) {
   const ds = descendants(from)
-  try { if (!ds.some((i) => i.kind === 'folder' && i.path === from)) await tg.createFolder(to).then((f) => S.items.unshift(f)) } catch (e) { return toast(errMsg(e), 'red') }
+  try { if (!ds.some((i) => i.kind === 'folder' && i.path === from)) await tg.createFolder(to, S.space).then((f) => S.items.unshift(f)) } catch (e) { return toast(errMsg(e), 'red') }
   await runAll(ds, async (i) => { const old = i.path; i.path = to + i.path.slice(from.length); try { await tg.editItem(i) } catch (e) { i.path = old; throw e } }, label)
   render()
 }
@@ -51,12 +51,13 @@ async function toggleFav(items) {
   render(); if (files.length) toast(v ? 'Added to Favorites' : 'Removed from Favorites', '', 1800)
 }
 async function trash(items) {
+  if (items.some((i) => i.src)) return purge(items.filter((i) => i.src), true, 'Delete for everyone?', 'These items will be removed from the shared folder for all members.')
   const now = Math.floor(Date.now() / 1000)
   await leave(items)
   const all = []
   for (const it of items) {
     if (it.kind === 'file') all.push(it)
-    else { const ds = descendants(it.path); if (!ds.some((i) => i.kind === 'folder' && i.path === it.path)) { try { const f = await tg.createFolder(it.path); S.items.unshift(f); ds.push(f) } catch (e) { toast(errMsg(e), 'red'); continue } } all.push(...ds) }
+    else { const ds = descendants(it.path); if (!ds.some((i) => i.kind === 'folder' && i.path === it.path)) { try { const f = await tg.createFolder(it.path, S.space); S.items.unshift(f); ds.push(f) } catch (e) { toast(errMsg(e), 'red'); continue } } all.push(...ds) }
   }
   await runAll([...new Set(all)], async (i) => { i.d = now; try { await tg.editItem(i) } catch (e) { i.d = 0; throw e } }, 'Moving to Recently Deleted…')
   S.sel.clear(); render(); toast(`${items.length} item${items.length > 1 ? 's' : ''} moved to Recently Deleted`)
@@ -66,22 +67,25 @@ async function restore(items) {
   const r = await runAll(items, async (it) => { const o = it.d; it.d = 0; try { await tg.editItem(it) } catch (e) { it.d = o; throw e } }, 'Restoring…')
   S.sel.clear(); render(); if (r.ok) toast(`Restored ${r.ok} item${r.ok > 1 ? 's' : ''}`)
 }
-async function purge(items, ask = true) {
-  if (ask && !(await confirmBox('Delete forever?', `${items.length} item${items.length > 1 ? 's' : ''} will be permanently deleted from Telegram. This can't be undone.`, 'Delete', true))) return
+async function purge(items, ask = true, title = 'Delete forever?', text) {
+  if (ask && !(await confirmBox(title, text || `${items.length} item${items.length > 1 ? 's' : ''} will be permanently deleted from Telegram. This can't be undone.`, 'Delete', true))) return
+  const vfold = items.filter((i) => i.kind === 'folder'); for (const f of vfold) for (const d of descendants(f.path)) if (!items.includes(d)) items.push(d)
+  items = items.filter((i) => typeof i.id === 'number')
   await leave(items)
   await busy('Deleting…', async () => {
     const ids = items.map((i) => i.id).filter((x) => typeof x === 'number')
     const gone = new Set(ids), used = new Set(S.items.filter((i) => !gone.has(i.id) && i.sec && i.sec.th).map((i) => i.sec.th))
     const extra = [...new Set(items.map((i) => i.sec && i.sec.th).filter((t) => t && !used.has(t)))]
-    await tg.deleteIds([...ids, ...extra]); await cache.remove(ids).catch(() => {})
-    const set = new Set(ids); S.items = S.items.filter((i) => !set.has(i.id))
+    const src = items[0].src || ''
+    await tg.deleteIds([...ids, ...extra], src); await cache.remove(ids).catch(() => {})
+    const set = new Set(ids); S.spaces[src] = itemsOf(src).filter((i) => !set.has(i.id))
   })
   S.sel.clear(); render()
 }
 async function share(items) {
   const files = items.filter((i) => i.kind === 'file')
   if (files.some((f) => f.enc) && !(await confirmBox('Send encrypted files?', 'Encrypted files arrive in Saved Messages as unreadable data — they can only be opened here in TeleCloud.', 'Send anyway'))) return
-  await busy('Sending to Saved Messages…', () => tg.sendToSaved(files.map((f) => f.id)))
+  await busy('Sending to Saved Messages…', () => tg.sendToSaved(files.map((f) => f.id), files[0].src || ''))
   toast(`Sent to your Saved Messages in Telegram`)
 }
 function act(a, items, src) {
@@ -102,7 +106,10 @@ function act(a, items, src) {
   if (a === 'open' || a === 'preview') return open(items[0])
   if (a === 'info') return info(items[0])
   if (a === 'share') return share(items)
-  if (a === 'reveal') { go({ view: 'drive', path: items[0].path }, 'fwd'); setTimeout(() => { S.sel = new Set([key(items[0])]); updateSel(); cardOf(items[0])?.scrollIntoView({ block: 'center', behavior: 'smooth' }) }, 350) }
+  if (a === 'savemine') return copyCross(items, '')
+  if (a === 'toshare') return copyCross(items, null)
+  if (a === 'sharefolder') return shareFolderFlow(items[0])
+  if (a === 'reveal') { go({ view: 'drive', path: items[0].path, space: items[0].src || '' }, 'fwd'); setTimeout(() => { S.sel = new Set([key(items[0])]); updateSel(); cardOf(items[0])?.scrollIntoView({ block: 'center', behavior: 'smooth' }) }, 350) }
 }
 async function open(it) {
   if (!it) return
@@ -130,7 +137,7 @@ function ctxMenu(x, y, items) {
   const html = S.view === 'trash' ? B('restore', I.restore, 'Restore') + '<hr>' + B('purge', I.trash, 'Delete Forever', 'red')
     : (one ? (it.kind === 'folder' ? B('open', I.drive, 'Open', '', '↵') : B('preview', I.eye, 'Quick Preview', '', 'Space')) : '') +
       (files.length || items.some((i) => i.kind === 'folder') ? B('download', I.download, items.some((i) => i.kind === 'folder') ? 'Download as ZIP' : files.length > 1 ? `Download ${files.length} Files` : 'Download') : '') + (files.length > 1 && !items.some((i) => i.kind === 'folder') ? B('zip', I.zip, 'Download as ZIP') : '') + (one && files.length && isText(it) && it.size < 2097152 ? B('edit', I.note, 'Edit Text') : '') + (files.length ? (pinned ? '' : B('pin', I.offline, 'Keep on This Device')) + (files.some((f) => S.cached.has(f.id)) ? B('unpin', I.broom, 'Delete from This Device') : '') + B('share', I.send, 'Send to Saved Messages') : '') + '<hr>' +
-      (one && !it.locked ? B('rename', I.edit, 'Rename') : '') + B('move', I.move, 'Move to…') + B('dup', I.copy, 'Duplicate') + B('copy', I.copy, 'Copy to…') + (files.length ? B('fav', files.every((f) => f.fav) ? I.starFill : I.star, files.every((f) => f.fav) ? 'Remove from Favorites' : 'Add to Favorites') : '') +
+      (one && !it.locked ? B('rename', I.edit, 'Rename') : '') + B('move', I.move, 'Move to…') + B('dup', I.copy, 'Duplicate') + B('copy', I.copy, 'Copy to…') + (it.src ? B('savemine', I.download, 'Save to My Drive') : (tg.shares.size && !items.some((i) => i.enc) ? B('toshare', I.users, 'Add to Shared Folder…') : '') + (one && it.kind === 'folder' ? B('sharefolder', I.share, 'Share Folder…') : '')) + (files.length && !it.src ? B('fav', files.every((f) => f.fav) ? I.starFill : I.star, files.every((f) => f.fav) ? 'Remove from Favorites' : 'Add to Favorites') : '') +
       (one ? B('info', I.info, 'Get Info', '', '⌘I') : '') + (one && files.length && S.view !== 'drive' ? B('reveal', I.drive, 'Show in Folder') : '') + '<hr>' + B('delete', I.trash, 'Delete', 'red', '⌫')
   menu(x, y, html, (b) => act(b.dataset.ca, items, cardOf(it)))
 }

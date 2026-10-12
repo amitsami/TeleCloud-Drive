@@ -1,7 +1,7 @@
 // Demo backend used only for local screenshots (vite.mock.config.js). Not part of the real build.
 import * as cache from './cache.js'
 export const API_ID = 1, API_HASH = ''
-export let me = { firstName: 'Amit', lastName: 'Sami', username: 'amitsami' }
+export let me = { id: '1', firstName: 'Amit', lastName: 'Sami', username: 'amitsami' }
 export const normPath = (p) => '/' + String(p || '/').split('/').filter(Boolean).join('/')
 export const thumbMsgs = new Map()
 export let vault = { id: 1, rec: { v: 1, id: 'demo' } }
@@ -20,13 +20,27 @@ let items = [
 items.forEach((i) => { if (i.kind === 'file' && (i.hue != null)) i.date = now - (i.id - 15) * 86400 * 9 })
 export async function initClient() { return !location.hash.includes('login') }
 export async function getMe() { return me } export async function ensureChannel() {}
-export async function listAll() { await new Promise((r) => setTimeout(r, 400)); return items }
+export async function listAll(_, src = '') { await new Promise((r) => setTimeout(r, 400)); if (src) return (shareItems[src] || []).map((i) => ({ ...i, src })); return items }
+export const mid = (x) => x
+export const shares = new Map()
+const shareItems = {
+  cAIUB: [{ kind: 'folder', id: 2e10 + 1, path: '/Lab Reports', d: 0, date: now }, F(2e10 + 2, 'CSE Notes.pdf', '/', 3.2e6, 'application/pdf'), F(2e10 + 3, 'Group Photo.jpg', '/', 2.1e6, 'image/jpeg', { hasThumb: true, hue: 300 }), F(2e10 + 4, 'Assignment 3.docx', '/', 220e3, ''), F(2e10 + 5, 'Lecture 07.mp4', '/', 210e6, 'video/mp4', { hasThumb: true, hue: 40, duration: 2900 }), F(2e10 + 6, 'Lab 4.pdf', '/Lab Reports', 1.1e6, 'application/pdf')],
+  cFAM: [F(3e10 + 1, 'Eid 2026.jpg', '/', 3.4e6, 'image/jpeg', { hasThumb: true, hue: 25 }), F(3e10 + 2, 'Family tree.pdf', '/', 600e3, 'application/pdf')],
+}
+export async function loadShares() { shares.set('cAIUB', { key: 'cAIUB', name: 'AIUB Spring 26', code: 'TC-k3Jd9QpLm2ZxY0aB', owner: true, count: 14 }); shares.set('cFAM', { key: 'cFAM', name: 'Family Album', code: 'TC-Qw7Rt5Yu1Io3Pa9S', owner: false, count: 6 }); return [...shares.values()] }
+export async function createShare(name) { const sh = { key: 'c' + Math.random().toString(36).slice(2, 7), name, code: 'TC-' + Math.random().toString(36).slice(2, 14), owner: true, count: 1 }; shares.set(sh.key, sh); return sh }
+export async function peekShare(code) { await new Promise((r) => setTimeout(r, 300)); if (!/^TC-\w{6,}/i.test(code.trim())) throw new Error("That doesn't look like a TeleCloud code"); return { joined: false, name: 'Design Team', count: 8, ok: true } }
+export async function joinShare() { const sh = { key: 'cDES', name: 'Design Team', code: 'TC-Zx9Cv8Bn7Mm6Ll5K', owner: false, count: 9 }; shares.set(sh.key, sh); shareItems.cDES = [F(4e10 + 1, 'Brand guide.pdf', '/', 8e6, 'application/pdf')]; return sh }
+export async function resetShareCode(k) { const sh = shares.get(k); sh.code = 'TC-' + Math.random().toString(36).slice(2, 14); return sh.code }
+export async function renameShare() {} export async function leaveShare(k) { shares.delete(k) }
+export async function shareMembers() { return [{ id: '1', name: 'Amit Sami', username: 'amitsami', owner: true }, { id: '2', name: 'Nusrat Jahan', username: 'nusrat' }, { id: '3', name: 'Rafi Ahmed', username: '' }] }
+export async function myPhoto() { return null }
 export async function openItem(it) { return it }
-export async function editItem() {} export async function createFolder(path) { return { kind: 'folder', id: Math.floor(Math.random() * 1e6), path, d: 0, date: now } } export async function deleteIds() {}
+export async function editItem() {} export async function createFolder(path, src) { return { kind: 'folder', id: Math.floor(Math.random() * 1e6), path, d: 0, date: now, src: src || undefined } } export async function deleteIds() {}
 export async function saveVault() {} export async function sendToSaved() {}
 export const MAX_SIZE = () => 2e9
-export async function uploadFile(file, path, { onProgress = () => {}, ctl, encrypt, name } = {}) { const n = file.size < 50000 ? 5 : 400; for (let i = 1; i <= n; i++) { await new Promise((r) => setTimeout(r, 60)); while (ctl && ctl.paused) await new Promise((r) => setTimeout(r, 200)); onProgress(i / n, (file.size * i) / n) } const o = F(Math.floor(Math.random() * 1e6), name || file.name, path, file.size, file.type, { enc: encrypt }); o.blob = file; return o }
-export async function copyItem(it, patch = {}) { return { ...it, id: Math.floor(Math.random() * 1e6), fav: false, d: 0, ...patch } }
+export async function uploadFile(file, path, { onProgress = () => {}, ctl, encrypt, name, src } = {}) { const n = file.size < 50000 ? 5 : 400; for (let i = 1; i <= n; i++) { await new Promise((r) => setTimeout(r, 60)); while (ctl && ctl.paused) await new Promise((r) => setTimeout(r, 200)); onProgress(i / n, (file.size * i) / n) } const o = F(Math.floor(Math.random() * 1e6), name || file.name, path, file.size, file.type, { enc: encrypt && !src }); if (src) o.src = src; o.blob = file; return o }
+export async function copyItem(it, patch = {}) { const o = { ...it, id: Math.floor(Math.random() * 1e6), fav: false, d: 0, ...patch }; if (!o.src) delete o.src; return o }
 export async function replaceFile(it, file) { const o = { ...it, id: Math.floor(Math.random() * 1e6), size: file.size, blob: file }; return o }
 function art(hue, w = 480, h = 360) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d')

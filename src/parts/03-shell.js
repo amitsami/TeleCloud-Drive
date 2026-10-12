@@ -1,8 +1,9 @@
 
 /* ---------- app shell ---------- */
-const NAV = [['recents', 'Home', I.clock], ['drive', 'Drive', I.drive], ['photos', 'Photos', I.photo], ['favorites', 'Favorites', I.star], ['offline', 'On This Device', I.device]]
+const NAV = [['recents', 'Home', I.home], ['drive', 'My Drive', I.drive], ['shared', 'Shared', I.users], ['photos', 'Photos', I.photo], ['favorites', 'Favorites', I.star], ['offline', 'On This Device', I.device]]
+const HUE = { recents: 250, drive: 228, shared: 160, photos: 200, favorites: 38, offline: 280, trash: 4, settings: 240 }
 const NAV2 = [['trash', 'Recently Deleted', I.trash], ['settings', 'Settings', I.gear]]
-const TITLES = { recents: 'Home', drive: 'Drive', photos: 'Photos', favorites: 'Favorites', offline: 'On This Device', trash: 'Recently Deleted', settings: 'Settings', search: 'Search', cat: '' }
+const TITLES = { recents: 'Home', drive: 'My Drive', shared: 'Shared Folders', photos: 'Photos', favorites: 'Favorites', offline: 'On This Device', trash: 'Recently Deleted', settings: 'Settings', search: 'Search', cat: '' }
 const CATV = { photos: ['Photos', I.photo, '#2F9BFF'], videos: ['Videos', I.video, '#9B5CF6'], documents: ['Documents', I.doc, '#FF9F0A'], music: ['Music', I.music, '#FF375F'], other: ['Other', I.box, '#30D158'] }
 const uname = () => [tg.me.firstName, tg.me.lastName].filter(Boolean).join(' ') || tg.me.username || 'You'
 function applyTheme() {
@@ -16,12 +17,13 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme
 
 function shell() {
   const name = uname()
-  const navBtn = ([k, l, ic]) => `<button data-v="${k}" draggable="false">${ic}<span>${l}</span><span class="count" data-c="${k}"></span></button>`
+  const navBtn = ([k, l, ic]) => `<button data-v="${k}" draggable="false">${tile(ic, HUE[k])}<span>${l}</span><span class="count" data-c="${k}"></span></button>`
   document.body.innerHTML = `${WALL}<div id="app">
     <aside class="sidebar glass" id="side">
       <div class="brand">${logo(28)}<span>TeleCloud</span></div>
       <div class="side-scroll" id="sscroll"><span class="nav-ind"></span>
         <div class="nav-l">Library</div><nav class="nav">${NAV.map(navBtn).join('')}</nav>
+        <div class="nav-l">Shared with me <button class="nav-add" data-a="join" title="Join with a code">${I.plus}</button></div><nav class="nav" id="sshare"></nav>
         <div class="nav-l">Folders</div><nav class="nav" id="sfold"></nav>
         <div class="nav-l">More</div><nav class="nav">${NAV2.map(navBtn).join('')}</nav>
       </div>
@@ -31,7 +33,7 @@ function shell() {
           <div class="sc-bar" id="scbar"></div>
           <div class="sc-s" id="cachel" data-v2="settings" role="button" title="Manage storage" style="cursor:pointer">On this device: …</div>
         </button>
-        <div class="acct"><div class="avatar">${esc((name[0] || 'T').toUpperCase())}</div><div style="min-width:0;flex:1"><div class="nm">${esc(name)}</div><div class="meta-s">${tg.me.username ? '@' + esc(tg.me.username) : 'Telegram account'}</div></div>
+        <div class="acct">${avatarHTML()}<div style="min-width:0;flex:1"><div class="nm">${esc(name)}</div><div class="meta-s">${tg.me.username ? '@' + esc(tg.me.username) : 'Telegram account'}</div></div>
         <button class="iconbtn" id="logout" title="Sign out">${I.logout}</button></div>
       </div>
     </aside>
@@ -55,7 +57,7 @@ function shell() {
       <section id="content" tabindex="-1"></section>
     </main>
   </div>
-  <nav class="tabbar glass" id="tabbar"><span class="tab-ind"></span>${[NAV[0], NAV[1], NAV[2], NAV[3], ['settings', 'Settings', I.gear]].map(([k, l, ic]) => `<button data-v="${k}">${ic}<span>${l}</span></button>`).join('')}</nav>
+  <nav class="tabbar glass" id="tabbar"><span class="tab-ind"></span>${[NAV[0], NAV[1], NAV[2], NAV[3], ['settings', 'Settings', I.gear]].map(([k, l, ic]) => `<button data-v="${k}">${ic}<span>${l === 'My Drive' ? 'Drive' : l}</span></button>`).join('')}</nav>
   <button class="fab glass" id="fab" aria-label="Upload">${I.plus}</button>
   <div class="selbar glass" id="selbar"></div>
   <div id="drop"><div class="drop-card glass"><div class="big">${I.upload}</div><div id="dropt">Drop to upload</div><div class="dsub" id="drops">Files and folders go straight to Telegram</div></div></div>
@@ -68,19 +70,21 @@ const cloudBar = (st, total) => Object.entries(st).filter(([, v]) => v.size).map
 async function updateCacheLabel() { const l = $('#cachel'); if (!l) return; const [m, t] = await Promise.all([cache.list(), cache.thumbStats()]); l.textContent = `On this device: ${fmtSize(m.reduce((a, b) => a + b.size, 0) + t.size)}` }
 
 /* ---------- navigation (with history + animated transitions) ---------- */
-const navState = () => ({ view: S.view, path: S.path, cat: S.cat })
+const navState = () => ({ view: S.view, path: S.path, cat: S.cat, space: S.space })
 function go(st, dir = 'none', push = true) {
   const cur = navState()
-  if (st.view === cur.view && (st.path ?? '/') === cur.path && (st.cat ?? S.cat) === cur.cat && !S.q) return
-  if (push) { S.hist = S.hist.slice(0, S.hi + 1); S.hist.push({ view: st.view, path: st.path ?? '/', cat: st.cat ?? S.cat }); S.hi = S.hist.length - 1; history.pushState({ hi: S.hi }, '') }
+  const sp = st.view === 'drive' ? (st.space ?? (st.view === cur.view ? S.space : '')) : ''
+  if (st.view === cur.view && (st.path ?? '/') === cur.path && (st.cat ?? S.cat) === cur.cat && sp === cur.space && !S.q) return
+  if (sp) loadSpace(sp)
+  if (push) { S.hist = S.hist.slice(0, S.hi + 1); S.hist.push({ view: st.view, path: st.path ?? '/', cat: st.cat ?? S.cat, space: sp }); S.hi = S.hist.length - 1; history.pushState({ hi: S.hi }, '') }
   transition(() => {
-    S.view = st.view; S.path = st.path ?? '/'; if (st.cat) S.cat = st.cat
+    S.view = st.view; S.space = sp; S.path = st.path ?? '/'; if (st.cat) S.cat = st.cat
     S.q = ''; $('#q').value = ''; $('#mq').value = ''; S.sel.clear(); S.anim = true
     $('#side').classList.remove('open'); $('.scrim')?.remove()
     render(); $('#scroller').scrollTop = 0
   }, dir)
 }
-function histGo(d) { const n = S.hi + d; if (n < 0 || n >= S.hist.length) return; S.hi = n; const st = S.hist[n]; transition(() => { Object.assign(S, { view: st.view, path: st.path, cat: st.cat, q: '' }); S.sel.clear(); S.anim = true; render(); $('#scroller').scrollTop = 0 }, d < 0 ? 'back' : 'fwd') }
+function histGo(d) { const n = S.hi + d; if (n < 0 || n >= S.hist.length) return; S.hi = n; const st = S.hist[n]; transition(() => { Object.assign(S, { view: st.view, path: st.path, cat: st.cat, space: st.space || '', q: '' }); if (S.space) loadSpace(S.space); S.sel.clear(); S.anim = true; render(); $('#scroller').scrollTop = 0 }, d < 0 ? 'back' : 'fwd') }
 window.addEventListener('popstate', (e) => {
   if (closeTop()) { history.pushState({ hi: S.hi }, ''); return }
   const hi = e.state && e.state.hi
@@ -101,16 +105,17 @@ function closeTop() {
 
 /* ---------- render ---------- */
 function render() {
+  const shr = S.space && tg.shares.get(S.space)
   const vis = S._vis = S.view === 'settings' ? [] : visible()
-  const active = S.q ? '' : S.view === 'cat' ? 'recents' : S.view
+  const active = S.q ? '' : S.view === 'cat' ? 'recents' : S.space ? 'shared' : S.view
   $$('[data-v]').forEach((b) => !b.dataset.sv && b.classList.toggle('on', b.dataset.v === active))
-  renderSideFolders()
+  renderSideFolders(); renderSideShares()
   requestAnimationFrame(() => { placeInd(); placeSeg($('#lay')) })
   const tot = live().filter((i) => i.kind === 'file')
   const used = tot.reduce((a, b) => a + b.size, 0)
   $('#used').textContent = fmtSize(used)
   $('#scbar').innerHTML = cloudBar(catStats(), used) || '<i style="width:2%;background:var(--a)"></i>'
-  const tc = S.items.filter((i) => i.d).length; $('[data-c="trash"]').textContent = tc || ''
+  const tc = itemsOf('').filter((i) => i.d).length; $('[data-c="trash"]').textContent = tc || ''
   const oc = live().filter((i) => i.kind === 'file' && S.cached.has(i.id)).length; $('[data-c="offline"]').textContent = oc || ''
   $$('#lay button').forEach((b) => b.classList.toggle('on', b.dataset.l === S.layout))
   const settingsV = S.view === 'settings'
@@ -124,16 +129,16 @@ function render() {
   if (S.q) { cr = `<button class="cur">Results for “${esc(S.q)}”</button>`; title = 'Search' }
   else if (S.view === 'drive') {
     const parts = S.path.split('/').filter(Boolean); let acc = ''
-    cr = `<button class="${parts.length ? 'up' : 'cur'}" data-p="/" data-drop="/">Drive</button>` + parts.map((p, i) => { acc += '/' + p; return `<span class="sep">${I.chevron}</span><button class="${i === parts.length - 1 ? 'cur' : 'up'}" data-p="${esc(acc)}" data-drop="${esc(acc)}">${esc(p)}</button>` }).join('')
-    title = parts.length ? parts[parts.length - 1] : 'Drive'
+    cr = (shr ? `<button class="up" data-v2="shared">Shared</button><span class="sep">${I.chevron}</span>` : '') + `<button class="${parts.length ? 'up' : 'cur'}" data-p="/" data-drop="/">${shr ? esc(shr.name) : 'My Drive'}</button>` + parts.map((p, i) => { acc += '/' + p; return `<span class="sep">${I.chevron}</span><button class="${i === parts.length - 1 ? 'cur' : 'up'}" data-p="${esc(acc)}" data-drop="${esc(acc)}">${esc(p)}</button>` }).join('')
+    title = parts.length ? parts[parts.length - 1] : shr ? shr.name : 'My Drive'
   } else if (S.view === 'cat') { cr = `<button class="up" data-home="1">Home</button><span class="sep">${I.chevron}</span><button class="cur">${CATV[S.cat][0]}</button>`; title = CATV[S.cat][0] }
   else cr = `<button class="cur">${title}</button>`
   $('#crumbs').innerHTML = cr; $('#mtt').textContent = title; $('#mbig').textContent = title
   // mobile back button
-  const backTo = S.q ? null : S.view === 'drive' && S.path !== '/' ? (parentOf(S.path) === '/' ? 'Drive' : baseName(parentOf(S.path))) : S.view === 'cat' ? 'Home' : (S.view === 'trash' || S.view === 'offline') ? 'Settings' : null
+  const backTo = S.q ? null : S.view === 'drive' && S.space && S.path === '/' ? 'Shared' : S.view === 'drive' && S.path !== '/' ? (parentOf(S.path) === '/' ? (shr ? shr.name : 'Drive') : baseName(parentOf(S.path))) : S.view === 'cat' ? 'Home' : (S.view === 'trash' || S.view === 'offline') ? 'Settings' : null
   $('#mback').classList.toggle('show', !!backTo); $('#mbackt').textContent = backTo || ''
   const fl = vis.filter((i) => i.kind === 'file'), fo = vis.length - fl.length
-  $('#tsub').textContent = settingsV ? 'Storage, encryption & appearance' : S.view === 'recents' && !S.q ? `${tot.length} files · ${fmtSize(used)}` :
+  $('#tsub').textContent = S.view === 'shared' ? `${tg.shares.size} folder${tg.shares.size === 1 ? '' : 's'} · join with a code or share yours` : settingsV ? 'Storage, encryption & appearance' : S.view === 'recents' && !S.q ? `${tot.length} files · ${fmtSize(used)}` :
     [fo ? `${fo} folder${fo > 1 ? 's' : ''}` : '', `${fl.length} file${fl.length === 1 ? '' : 's'}`, fl.length ? fmtSize(fl.reduce((a, b) => a + b.size, 0)) : ''].filter(Boolean).join(' · ')
   // search filters
   $('#filters').innerHTML = S.q ? `<div class="chips">${[['all', 'All'], ...Object.entries(CATV).map(([k, v]) => [k, v[0]])].map(([k, l]) => `<button data-qt="${k}" class="${S.qtype === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''
@@ -141,10 +146,12 @@ function render() {
   const c = $('#content'); c.className = S.layout + ' v-' + S.view + (S.anim && !RM() ? ' anim' : '')
   const doAnim = S.anim; S.anim = false
   if (settingsV) { settingsView(); finish(); return }
-  if (S.loading && !S.items.length) { c.innerHTML = skeleton(); finish(); return }
+  if (S.view === 'shared') { c.innerHTML = sharedView(); finish(); return }
+  if ((S.loading && !S.items.length) || (S.space && S.spaceLoading === S.space && !S.items.length)) { c.innerHTML = (S.space ? shareHead() : '') + skeleton(); finish(); return }
   const lockedN = S.items.filter((i) => i.enc && i.locked && !i.d).length
   const lockBanner = lockedN && S.view !== 'trash' ? `<div class="banner glass-lite">${I.lock}<span><b>${lockedN} encrypted file${lockedN > 1 ? 's are' : ' is'} locked.</b> Enter your passphrase to see names and previews.</span><button class="btn primary sm" data-a="unlock">Unlock</button></div>` : ''
   if (S.view === 'recents' && !S.q) { c.innerHTML = lockBanner + homeView(vis) }
+  else if (S.space && !S.q) c.innerHTML = (S.path === '/' ? shareHead() : '') + (vis.length ? list(vis) : emptyState())
   else if (!vis.length) c.innerHTML = lockBanner + emptyState()
   else if (S.view === 'photos' && !S.q) c.innerHTML = photosView(vis)
   else if (S.view === 'trash' && !S.q) c.innerHTML = `<div class="banner glass-lite">${I.trash}<span>Items are permanently deleted after 30 days.</span><span class="grow"></span><button class="btn ghost sm" data-a="restoreall">${I.restore} Restore All</button><button class="btn ghost sm red" data-a="empty">Empty</button></div>` + list(vis)
@@ -156,7 +163,7 @@ function render() {
 const skeleton = () => `<div class="items skel">${Array.from({ length: 14 }, (_, i) => `<div class="card" style="--i:${i}"><div class="ic"><i class="sk sk-ic"></i></div><i class="sk sk-t"></i><i class="sk sk-s"></i></div>`).join('')}</div>`
 function placeInd() {
   const sc = $('#sscroll'), ind = $('.nav-ind', sc || document), on = sc && $('.nav button.on', sc)
-  if (ind) { if (!on) ind.style.opacity = 0; else { const r = on.getBoundingClientRect(), p = sc.getBoundingClientRect(); ind.style.opacity = 1; ind.style.height = r.height + 'px'; ind.style.transform = `translateY(${r.top - p.top + sc.scrollTop}px)` } }
+  if (ind) { if (!on) ind.style.opacity = 0; else { const r = on.getBoundingClientRect(), p = sc.getBoundingClientRect(); const ty = `translateY(${r.top - p.top + sc.scrollTop}px)`; if (ind.style.transform && ind.style.transform !== ty) { ind.classList.remove('moving'); void ind.offsetWidth; ind.classList.add('moving') } ind.style.opacity = 1; ind.style.height = r.height + 'px'; ind.style.transform = `translateY(${r.top - p.top + sc.scrollTop}px)` } }
   const tb = $('#tabbar'), ti = tb && $('.tab-ind', tb), ton = tb && $('button.on', tb)
   if (ti) { if (!ton) ti.style.opacity = 0; else { ti.style.opacity = 1; ti.style.width = ton.offsetWidth + 'px'; ti.style.transform = `translateX(${ton.offsetLeft}px)` } }
 }
@@ -184,11 +191,11 @@ function homeView(vis) {
     <div class="cats">${Object.entries(CATV).map(([k, [l, ic, col]], i) => `<button class="cat mat" data-cat="${k}" style="--c:${col};--i:${i}"><span class="cat-ic">${ic}</span><span class="cat-n">${l}</span><span class="cat-s">${st[k].n} item${st[k].n === 1 ? '' : 's'} · ${fmtSize(st[k].size)}</span></button>`).join('')}</div>
     <div class="section-h"><span>Recent</span>${vis.length ? `<button class="link" data-v2="drive">Show all ${I.chevron}</button>` : ''}</div>
     ${vis.length ? `<div class="grid">${list(vis.slice(0, 24), true)}</div>` : `<div class="empty sm"><div><div class="empty-ic">${folderIcon(84)}</div><h3>Nothing here yet</h3><div>Drag files anywhere on this page, or tap Upload.</div></div></div>`}
-    <div class="quick mobile-only"><button class="mat" data-v2="offline">${I.device}<span>On This Device</span>${I.chevron}</button><button class="mat" data-v2="trash">${I.trash}<span>Recently Deleted</span>${I.chevron}</button></div>`
+    <div class="quick mobile-only"><button class="mat" data-v2="favorites">${tile(I.star, 38)}<span>Favorites</span>${I.chevron}</button><button class="mat" data-v2="offline">${tile(I.device, 280)}<span>On This Device</span>${I.chevron}</button><button class="mat" data-v2="trash">${tile(I.trash, 4)}<span>Recently Deleted</span>${I.chevron}</button></div>`
 }
 function emptyState() {
   const m = {
-    drive: [S.path === '/' ? 'Your drive is empty' : 'This folder is empty', 'Drop files here, or use Upload.'],
+    drive: [S.path === '/' ? (S.space ? 'This shared folder is empty' : 'Your drive is empty') : 'This folder is empty', S.space ? 'Anything you add here is visible to every member.' : 'Drop files here, or use Upload.'],
     cat: ['Nothing here yet', 'Files of this type will show up here.'], photos: ['No photos or videos', 'Upload photos and videos to see them here.'],
     favorites: ['No favorites yet', 'Mark files with a star to find them quickly.'], trash: ['Recently Deleted is empty', 'Deleted items stay here for 30 days.'],
     offline: ['Nothing saved on this device', 'Choose “Keep on This Device” on any file to open it instantly, even offline.'],

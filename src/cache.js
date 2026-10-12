@@ -92,9 +92,13 @@ export async function storageDetails() {
 /** Delete everything the site keeps in the browser except the sign-in (and, optionally, the encryption key). Cloud files are never touched. */
 export async function wipeBrowserStorage({ keepKey = true } = {}) {
   await clearAll().catch(() => {})
+  // drop the database files entirely (empty databases still take space on disk)
+  try { const d = await db(); d.close() } catch {}
+  dbp = null
+  await new Promise((r) => { const q = indexedDB.deleteDatabase(DB); q.onsuccess = q.onerror = q.onblocked = () => r() })
   try { for (const k of await caches.keys()) await caches.delete(k) } catch {}
   try {
-    const keep = new Set([DB, ...(keepKey ? ['telecloud-keys'] : [])])
+    const keep = new Set(keepKey ? ['telecloud-keys'] : [])
     const dbs = indexedDB.databases ? await indexedDB.databases() : []
     await Promise.all(dbs.filter((d) => d.name && !keep.has(d.name)).map((d) => new Promise((r) => { const q = indexedDB.deleteDatabase(d.name); q.onsuccess = q.onerror = q.onblocked = () => r() })))
   } catch {}

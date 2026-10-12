@@ -10,7 +10,8 @@ A free, unlimited cloud drive that runs entirely in your browser and stores your
 - No server, no database: the app talks to Telegram directly from your browser. Your session stays on your device.
 
 ## Features
-- **Glass interface:** frosted sidebar, toolbar and mobile tab bar, with smooth animations and transitions. Light, dark and auto themes, plus reduced-motion and reduced-transparency options.
+- **Shared folders with join codes:** create a shared folder and get a code like `TC-…` (or a `#join=` link). Anyone with the code can join, view, add and download files, and pass the code on to friends. Owners can reset the code or delete the folder; members can leave anytime.
+- **Pastel glass design:** soft pastel colors, frosted panels with light that follows your pointer, Inter and Plus Jakarta Sans fonts, a new duotone icon set, and your Telegram profile photo. Light, dark and auto themes, plus reduced-motion and reduced-transparency options.
 - **Quick Preview:** opens photos, videos, audio, PDFs and text instantly without saving a copy. Videos stream with seeking.
 - **Transfers:** upload and download progress with speed, time remaining, pause, resume and cancel, plus parallel chunked downloads.
 - **End-to-end encryption:** optional and passphrase protected. AES-256-GCM encrypts names and metadata, AES-256-CTR encrypts file contents and thumbnails, and the key is derived with PBKDF2 (600k iterations). Telegram only sees ciphertext.
@@ -21,7 +22,7 @@ A free, unlimited cloud drive that runs entirely in your browser and stores your
 - **Download as ZIP:** download folders or multiple selected files as one ZIP. Large ZIPs stream straight to disk.
 - **Text notes:** create and edit text or Markdown files in the app (T, Ctrl/⌘+S).
 - **Find duplicates:** find files with the same name and size and clean them up.
-- **Clean Up Browser Storage:** removes cached files, the offline app copy and leftovers from older versions in one tap. Your sign-in and cloud files stay.
+- **Clean Up Browser Storage:** fully deletes the cache database, the offline app copy and leftovers from older versions in one tap. Your sign-in and cloud files stay. Signing out erases all local data.
 - Slideshow for photos, auto-play the next track for music, camera upload on phones, automatic renaming of name conflicts, Restore All.
 - Folders, drag to move, rename, favorites, Recently Deleted (auto-purged after 30 days), search with type filters, a Photos timeline, Get Info, Send to Saved Messages, keyboard shortcuts, pull to refresh, and an installable PWA with offline shell.
 

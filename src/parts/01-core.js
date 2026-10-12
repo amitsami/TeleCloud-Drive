@@ -3,7 +3,9 @@ import QRCode from 'qrcode'
 import * as tg from './tg.js'
 import * as E from './crypto.js'
 import * as cache from './cache.js'
-import { I, logo, folderIcon, fileIcon, ext } from './icons.js'
+import { I, logo, folderIcon, fileIcon, ext, tile } from './icons.js'
+import '@fontsource-variable/inter'
+import '@fontsource-variable/plus-jakarta-sans'
 
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s)
@@ -43,10 +45,14 @@ function toast(msg, kind = '', ms = 3000) {
 
 /* ---------- state ---------- */
 const S = {
-  items: [], view: 'recents', cat: 'photos', path: '/', sel: new Set(), layout: localStorage.getItem('tc.layout') || 'grid',
+  spaces: { '': [] }, space: '', view: 'recents', cat: 'photos', path: '/', sel: new Set(), layout: localStorage.getItem('tc.layout') || 'grid',
   sort: localStorage.getItem('tc.sort') || 'name', q: '', qtype: 'all', loading: true, transfers: [], thumbs: new Map(), big: new Map(),
   cached: new Map(), fresh: new Set(), anim: true, hist: [], hi: -1, pz: +(localStorage.getItem('tc.pz') || 4),
 }
+Object.defineProperty(S, 'items', { get() { return S.spaces[S.space] || (S.spaces[S.space] = []) }, set(v) { S.spaces[S.space] = v } })
+const itemsOf = (src) => S.spaces[src || ''] || (S.spaces[src || ''] = [])
+const findItem = (id) => { for (const k in S.spaces) { const f = S.spaces[k].find((i) => i.id === id); if (f) return f } return null }
+const inShare = () => !!S.space
 const e2eAuto = () => localStorage.getItem('tc.e2e') === '1'
 const live = () => S.items.filter((i) => !i.d)
 function allFolders() {
@@ -78,6 +84,7 @@ function visible() {
     const folders = S.qtype === 'all' ? [...allFolders().keys()].filter((p) => baseName(p).toLowerCase().includes(q)).map((p) => ({ kind: 'folder', path: p, name: baseName(p), id: 'v:' + p, virtual: true, date: 0 })) : []
     return sortItems([...folders, ...files])
   }
+  if (S.view === 'shared') return []
   if (S.view === 'drive') return sortItems([...folderEntries(S.path), ...live().filter((i) => i.kind === 'file' && i.path === S.path)])
   if (S.view === 'recents') return live().filter((i) => i.kind === 'file').sort((a, b) => (b.msg?.date || b.date) - (a.msg?.date || a.date)).slice(0, 60)
   if (S.view === 'favorites') return sortItems(live().filter((i) => i.kind === 'file' && i.fav))

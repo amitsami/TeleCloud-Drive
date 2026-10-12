@@ -24,11 +24,12 @@ async function settingsView() {
   const theme = localStorage.getItem('tc.theme') || 'auto'
   const oth = Math.max(0, est.usage - (est.idb ?? total) - (est.caches || 0))
   const quota = `<div class="quota"><div class="q-row"><span>Browser storage used</span><b>${fmtSize(est.usage)}${est.quota ? ` of ${fmtSize(est.quota)}` : ''}</b></div><div class="prog"><i style="width:${est.quota ? Math.max(1, Math.min(100, (est.usage / est.quota) * 100)) : 0}%"></i></div>
-    <div class="q-det"><span><i style="background:#34A3F5"></i>Cached files ${fmtSize(est.idb ?? total)}</span><span><i style="background:#8B5CF6"></i>App files ${fmtSize(est.caches || 0)}</span>${oth > 1024 ? `<span><i style="background:#94A3B8"></i>Other ${fmtSize(oth)}</span>` : ''}</div>
+    <div class="q-det"><span><i style="background:#34A3F5"></i>Cached files ${fmtSize(est.idb ?? total)}</span><span><i style="background:#8B5CF6"></i>App files ${fmtSize(est.caches || 0)}</span>${oth > 1024 ? `<span title="Space the browser itself reserves for this site: your sign-in, settings and database files. It can't be cleared without signing out."><i style="background:#94A3B8"></i>Browser overhead ${fmtSize(oth)} ${I.info}</span>` : ''}</div>
+    ${oth > 1024 && total === 0 && !(est.caches > 0) ? `<div class="q-note">${I.info}<span>Your cache is empty. The remaining ${fmtSize(oth)} is the browser’s own bookkeeping for this site (sign-in, settings, empty databases). Safari reports this as used space; it can only be removed by signing out and clearing website data.</span></div>` : ''}
     <button class="btn glassbtn sm q-wipe" id="bwipe">${I.broom} Clean Up Browser Storage</button></div>`
-  const v = tg.vault, unl = E.unlocked(), encN = S.items.filter((i) => i.enc).length
-  const e2e = !v ? `<div class="e2e-card off"><span class="e2e-ic">${I.lock}</span><div><b>End-to-end encryption is off</b><span>Encrypt files in this browser before they're uploaded. Names, contents and thumbnails become unreadable to anyone without your passphrase — including Telegram.</span></div><button class="btn primary" data-a="e2e">Set up</button></div>`
-    : `<div class="e2e-card on ${unl ? '' : 'lk'}"><span class="e2e-ic">${unl ? I.unlock : I.lock}</span><div><b>${unl ? 'Encryption is on · Unlocked on this device' : 'Encryption is on · Locked'}</b><span>${encN} encrypted file${encN === 1 ? '' : 's'} · AES-256 · Your passphrase never leaves this device.</span></div>${unl ? `<button class="btn glassbtn sm" data-a="lockv">${I.lock} Lock</button>` : `<button class="btn primary sm" data-a="unlock">${I.unlock} Unlock</button>`}</div>
+  const v = tg.vault, unl = E.unlocked(), encN = itemsOf('').filter((i) => i.enc).length
+  const e2e = !v ? `<div class="e2e-card off"><span class="e2e-ic">${I.shieldLock}</span><div><b>End-to-end encryption is off</b><span>Encrypt files in this browser before they're uploaded. Names, contents and thumbnails become unreadable to anyone without your passphrase — including Telegram.</span></div><button class="btn primary" data-a="e2e">Set up</button></div>`
+    : `<div class="e2e-card on ${unl ? '' : 'lk'}"><span class="e2e-ic">${unl ? I.shield : I.shieldLock}</span><div><b>${unl ? 'Encryption is on · Unlocked on this device' : 'Encryption is on · Locked'}</b><span>${encN} encrypted file${encN === 1 ? '' : 's'} · AES-256 · Your passphrase never leaves this device.</span></div>${unl ? `<button class="btn glassbtn sm" data-a="lockv">${I.lock} Lock</button>` : `<button class="btn primary sm" data-a="unlock">${I.unlock} Unlock</button>`}</div>
       <div class="srow"><div><b>Encrypt new uploads</b><span>When on, every file you upload is end-to-end encrypted.</span></div>${sw('e2eauto', e2eAuto())}</div>
       ${unl ? `<div class="srow"><div><b>Change passphrase</b><span>Existing files stay readable — only the key that protects them is re-wrapped.</span></div><button class="btn glassbtn sm" data-a="e2epass">${I.key} Change</button></div>` : ''}`
   c.innerHTML = `<div class="set">
@@ -44,7 +45,7 @@ async function settingsView() {
         <div class="chips">${[['all', 'All'], ...Object.entries(cache.CATS).map(([k, v]) => [k, v.label])].map(([k, l]) => `<button data-f="${k}" class="${CS.filter === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       </div>
       <div class="cl-b">${shown.length ? shown.map((r, i) => {
-        const it = S.items.find((x) => x.id === r.id); const tu = S.thumbs.get(r.id)
+        const it = findItem(r.id); const tu = S.thumbs.get(r.id)
         const ic = r.cat === 'thumbs' ? `<span class="ti" style="background:${cache.CATS.thumbs.color}">${I.photo}</span>` : tu ? `<img src="${tu}">` : fileIcon(r.name, 36)
         return `<label class="cr ${CS.sel.has(r.key) ? 'on' : ''}" style="--i:${Math.min(i, 20)}"><span class="chk"><input type="checkbox" data-ck="${esc(r.key)}" ${CS.sel.has(r.key) ? 'checked' : ''}><span></span></span>${ic}
           <span class="cr-b"><span class="cr-n">${esc(it ? it.name : r.name)}${r.pin ? `<em class="pin">${I.offline} Kept offline</em>` : ''}</span><span class="cr-s">${r.cat === 'thumbs' ? `${r.n} small images` : `${cache.CATS[r.cat].label} · used ${fmtDate(r.used / 1000)}${it ? '' : ' · no longer in cloud'}`}</span></span><b>${fmtSize(r.size)}</b><button class="iconbtn crx" data-rm="${esc(r.key)}" title="Delete from this device">${I.trash}</button></label>`
@@ -93,8 +94,8 @@ async function settingsView() {
 
     <div class="set-h"><h2>Account</h2></div>
     <div class="panel mat rows">
-      <div class="srow"><div class="acc"><div class="avatar lg">${esc((uname()[0] || 'T').toUpperCase())}</div><div><b>${esc(uname())}</b><span>${tg.me.username ? '@' + esc(tg.me.username) : ''}${tg.me.phone ? ' · +' + esc(tg.me.phone) : ''}</span></div></div><button class="btn glassbtn sm red" id="slogout">${I.logout} Sign out</button></div>
-      <div class="srow"><div><b>About TeleCloud</b><span>Version 3.5 · Open source · Runs entirely in your browser</span></div><a class="btn glassbtn sm" href="https://github.com/amitsami/TeleCloud-Drive" target="_blank" rel="noopener">${I.github} GitHub</a></div>
+      <div class="srow"><div class="acc">${avatarHTML('lg')}<div><b>${esc(uname())}</b><span>${tg.me.username ? '@' + esc(tg.me.username) : ''}${tg.me.phone ? ' · +' + esc(tg.me.phone) : ''}</span></div></div><button class="btn glassbtn sm red" id="slogout">${I.logout} Sign out</button></div>
+      <div class="srow"><div><b>About TeleCloud</b><span>Version 4.0 · Open source · Runs entirely in your browser</span></div><a class="btn glassbtn sm" href="https://github.com/amitsami/TeleCloud-Drive" target="_blank" rel="noopener">${I.github} GitHub</a></div>
     </div>
   </div>`
   $$('.segc', c).forEach(placeSeg)
@@ -156,7 +157,7 @@ async function wipeFlow(before) {
   try {
     S.thumbs.forEach((u) => URL.revokeObjectURL(u)); S.thumbs.clear(); dropBlobs(); S.cached.clear()
     await cache.wipeBrowserStorage(ok)
-    if (!ok.keepKey) { await E.lock(); S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file' } }) }
+    if (!ok.keepKey) { await E.lock(); itemsOf('').forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file' } }) }
     await sleep(300); const after = (await cache.estimate()).usage || 0
     toast(`Freed ${fmtSize(Math.max(0, before - after))} · your cloud files are untouched`)
   } catch (e) { toast(errMsg(e), 'red') } finally { t.close() }

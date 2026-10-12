@@ -23,12 +23,14 @@ async function uploadEntries(list, from) {
 
 /* ---------- bindings ---------- */
 function bind() {
-  const goV = (v) => go({ view: v, path: '/' }, 'none')
+  const goV = (v) => go({ view: v, path: '/', space: '' }, 'none')
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b && !e.target.closest('#content')) goV(b.dataset.v) })
-  $('#sfold').onclick = (e) => { const b = e.target.closest('[data-fp]'); if (b) go({ view: 'drive', path: b.dataset.fp }, 'fwd') }
+  $('#sfold').onclick = (e) => { const b = e.target.closest('[data-fp]'); if (b) go({ view: 'drive', path: b.dataset.fp, space: '' }, 'fwd') }
+  $('#sshare').onclick = (e) => { const b = e.target.closest('[data-sh]'); if (b) go({ view: 'drive', path: '/', space: b.dataset.sh }, 'fwd') }
   $('#hb').onclick = () => histGo(-1); $('#hf').onclick = () => histGo(1)
   $('#mback').onclick = () => {
-    if (S.view === 'drive' && S.path !== '/') go({ view: 'drive', path: parentOf(S.path) }, 'back')
+    if (S.view === 'drive' && S.space && S.path === '/') go({ view: 'shared' }, 'back')
+    else if (S.view === 'drive' && S.path !== '/') go({ view: 'drive', path: parentOf(S.path) }, 'back')
     else if (S.view === 'cat') go({ view: 'recents' }, 'back')
     else go({ view: 'settings' }, 'back')
   }
@@ -68,7 +70,7 @@ function bind() {
     for (const f of e.target.files) { const rel = (f.webkitRelativePath || f.name).split('/'); const dir = join(base, rel.slice(0, -1).join('/')); list.push({ file: f, path: dir }); let p = dir; while (p !== base && p !== '/') { list.push({ dir: p }); p = parentOf(p) } }
     uploadEntries(list, upFrom); e.target.value = ''
   }
-  $('#logout').onclick = async () => { if (await confirmBox('Sign out?', 'Your files stay safe in your Telegram account. Cached files on this device are removed.', 'Sign out', true)) { await cache.clearAll().catch(() => {}); await tg.logout(); location.reload() } }
+  $('#logout').onclick = async () => { if (await confirmBox('Sign out?', 'Your files stay safe in your Telegram account. Everything TeleCloud stored on this device is erased.', 'Sign out', true)) { await cache.wipeBrowserStorage({ keepKey: false }).catch(() => {}); await tg.logout(); for (const k of Object.keys(localStorage)) if (k.startsWith('tc.') && !['tc.theme'].includes(k)) localStorage.removeItem(k); location.reload() } }
   bindTransfers()
 
   const c = $('#content'), sc = $('#scroller')
@@ -76,7 +78,7 @@ function bind() {
   $('#cachel') && ($('#cachel').onclick = () => go({ view: 'settings' }, 'fwd'))
   c.onclick = (e) => {
     const a = e.target.closest('[data-a]')
-    if (a) { const v = a.dataset.a; if (v === 'upload') { upFrom = centerOf(a); pick() } else if (v === 'newfolder' || v === 'newfolder-root') newFolder(); else if (v === 'restoreall') restoreAll(); else if (v === 'dups') findDups(); else if (v === 'reload') { const t = toast('Refreshing…', 'busy', 0); refresh().finally(() => { t.close(); toast('Up to date'); S.view === 'settings' && settingsView() }) } else if (v === 'empty') { const t = S.items.filter((i) => i.d); t.length && purge(t) } else if (v === 'unlock') unlockFlow(); else if (v === 'e2e') setupE2E().then(() => S.view === 'settings' && settingsView()); else if (v === 'lockv') { E.lock().then(() => { S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file'; S.thumbs.delete(i.id) } }); dropBlobs(); toast('Locked', 'lock'); render() }) } else if (v === 'e2epass') changePass(); else if (v === 'keys') showKeys(); return }
+    if (a) { const v = a.dataset.a; if (v === 'upload') { upFrom = centerOf(a); pick() } else if (v === 'newfolder' || v === 'newfolder-root') newFolder(); else if (v === 'restoreall') restoreAll(); else if (v === 'join') joinFlow(); else if (v === 'newshare') newShareFlow(); else if (v === 'sharecode') shareCodeModal(a.dataset.k || S.space); else if (v === 'members') membersModal(a.dataset.k || S.space); else if (v === 'leave') leaveFlow(a.dataset.k || S.space); else if (v === 'opensh') go({ view: 'drive', path: '/', space: a.dataset.k }, 'fwd'); else if (v === 'dups') findDups(); else if (v === 'reload') { const t = toast('Refreshing…', 'busy', 0); refresh().finally(() => { t.close(); toast('Up to date'); S.view === 'settings' && settingsView() }) } else if (v === 'empty') { const t = S.items.filter((i) => i.d); t.length && purge(t) } else if (v === 'unlock') unlockFlow(); else if (v === 'e2e') setupE2E().then(() => S.view === 'settings' && settingsView()); else if (v === 'lockv') { E.lock().then(() => { S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file'; S.thumbs.delete(i.id) } }); dropBlobs(); toast('Locked', 'lock'); render() }) } else if (v === 'e2epass') changePass(); else if (v === 'keys') showKeys(); return }
     const pz = e.target.closest('[data-pz]'); if (pz) { S.pz = Math.min(8, Math.max(2, S.pz - +pz.dataset.pz)); localStorage.setItem('tc.pz', S.pz); $$('.photos', c).forEach((p) => p.style.setProperty('--cols', pcols())); return }
     const cb = e.target.closest('[data-cat]'); if (cb) { go({ view: 'cat', cat: cb.dataset.cat }, 'fwd'); return }
     if (e.target.closest('[data-occ]')) { (async () => { const l = await cache.list(); if (!(await confirmBox('Delete all cache?', `${fmtSize(l.reduce((a, b) => a + b.size, 0))} saved on this device will be removed. Your cloud files are not deleted.`, 'Delete cache', true))) return; await cache.clearAll(); S.thumbs.forEach((u) => URL.revokeObjectURL(u)); S.thumbs.clear(); dropBlobs(); S.cached.clear(); toast('Cache deleted · your cloud files are untouched'); updateCacheLabel(); render() })(); return }
@@ -174,21 +176,31 @@ function bind() {
 async function refresh() {
   S.loading = true
   try {
-    const items = await tg.listAll()
-    S.items = items
+    S.spaces[''] = await tg.listAll()
     if (tg.vault && !E.unlocked()) await E.restore(tg.vault.rec.id)
     await decryptAll()
     await refreshCached()
-    const old = S.items.filter((i) => i.d && Date.now() / 1000 - i.d > 30 * 86400)
-    if (old.length) tg.deleteIds([...old.map((i) => i.id), ...old.map((i) => i.sec && i.sec.th).filter(Boolean)]).then(() => { const ids = new Set(old.map((i) => i.id)); S.items = S.items.filter((i) => !ids.has(i.id)); render() }).catch(() => {})
+    const main = itemsOf('')
+    const old = main.filter((i) => i.d && Date.now() / 1000 - i.d > 30 * 86400)
+    if (old.length) tg.deleteIds([...old.map((i) => i.id), ...old.map((i) => i.sec && i.sec.th).filter(Boolean)]).then(() => { const ids = new Set(old.map((i) => i.id)); S.spaces[''] = itemsOf('').filter((i) => !ids.has(i.id)); render() }).catch(() => {})
+    if (S.space) await loadSpace(S.space, true)
   } catch (e) { toast(errMsg(e), 'red') }
   S.loading = false; S.anim = true; render()
+  loadSharesList()
+}
+async function loadSharesList() { try { await tg.loadShares(); S.sharesOk = true; render() } catch {} }
+async function loadSpace(key, force) {
+  if (S.spaces[key] && !force) return
+  if (!S.spaces[key]) S.spaces[key] = []
+  S.spaceLoading = key; if (S.space === key) render()
+  try { S.spaces[key] = await tg.listAll(null, key) } catch (e) { toast(errMsg(e), 'red') }
+  S.spaceLoading = null; if (S.space === key) { S.anim = true; render() }
 }
 async function start() {
   try {
     await tg.getMe(); await tg.ensureChannel()
     shell(); S.hist = [navState()]; S.hi = 0; history.replaceState({ hi: 0 }, '')
-    render(); cache.enforce().finally(updateCacheLabel); setupSW(); await refresh()
+    render(); cache.enforce().finally(updateCacheLabel); setupSW(); loadAvatar(); checkJoinLink(); liquid(); await refresh()
     let lastSync = Date.now()
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastSync > 90e3 && !S.loading && !S.transfers.some(active) && !document.querySelector('.viewer,.modal-bg')) { lastSync = Date.now(); refresh() } })
   } catch (e) {
@@ -196,6 +208,7 @@ async function start() {
   }
 }
 applyTheme()
+{ const m = /[#&]join=([^&]+)/.exec(location.hash); if (m) { sessionStorage.setItem('tc.join', decodeURIComponent(m[1])); history.replaceState(null, '', location.pathname + location.search) } }
 ;(async () => {
   try { const ok = await tg.initClient(); ok ? start() : authScreen() }
   catch (e) { document.body.innerHTML = `${WALL}<div class="empty"><div>${logo(64)}<h3>Couldn't connect</h3><div>${esc(errMsg(e))}</div><div class="btns"><button class="btn primary" onclick="location.reload()">Try again</button></div></div></div>` }

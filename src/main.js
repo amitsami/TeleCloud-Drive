@@ -3,7 +3,9 @@ import QRCode from 'qrcode'
 import * as tg from './tg.js'
 import * as E from './crypto.js'
 import * as cache from './cache.js'
-import { I, logo, folderIcon, fileIcon, ext } from './icons.js'
+import { I, logo, folderIcon, fileIcon, ext, tile } from './icons.js'
+import '@fontsource-variable/inter'
+import '@fontsource-variable/plus-jakarta-sans'
 
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s)
@@ -43,10 +45,14 @@ function toast(msg, kind = '', ms = 3000) {
 
 /* ---------- state ---------- */
 const S = {
-  items: [], view: 'recents', cat: 'photos', path: '/', sel: new Set(), layout: localStorage.getItem('tc.layout') || 'grid',
+  spaces: { '': [] }, space: '', view: 'recents', cat: 'photos', path: '/', sel: new Set(), layout: localStorage.getItem('tc.layout') || 'grid',
   sort: localStorage.getItem('tc.sort') || 'name', q: '', qtype: 'all', loading: true, transfers: [], thumbs: new Map(), big: new Map(),
   cached: new Map(), fresh: new Set(), anim: true, hist: [], hi: -1, pz: +(localStorage.getItem('tc.pz') || 4),
 }
+Object.defineProperty(S, 'items', { get() { return S.spaces[S.space] || (S.spaces[S.space] = []) }, set(v) { S.spaces[S.space] = v } })
+const itemsOf = (src) => S.spaces[src || ''] || (S.spaces[src || ''] = [])
+const findItem = (id) => { for (const k in S.spaces) { const f = S.spaces[k].find((i) => i.id === id); if (f) return f } return null }
+const inShare = () => !!S.space
 const e2eAuto = () => localStorage.getItem('tc.e2e') === '1'
 const live = () => S.items.filter((i) => !i.d)
 function allFolders() {
@@ -78,6 +84,7 @@ function visible() {
     const folders = S.qtype === 'all' ? [...allFolders().keys()].filter((p) => baseName(p).toLowerCase().includes(q)).map((p) => ({ kind: 'folder', path: p, name: baseName(p), id: 'v:' + p, virtual: true, date: 0 })) : []
     return sortItems([...folders, ...files])
   }
+  if (S.view === 'shared') return []
   if (S.view === 'drive') return sortItems([...folderEntries(S.path), ...live().filter((i) => i.kind === 'file' && i.path === S.path)])
   if (S.view === 'recents') return live().filter((i) => i.kind === 'file').sort((a, b) => (b.msg?.date || b.date) - (a.msg?.date || a.date)).slice(0, 60)
   if (S.view === 'favorites') return sortItems(live().filter((i) => i.kind === 'file' && i.fav))
@@ -172,9 +179,10 @@ function placeSeg(seg) {
 }
 
 /* ---------- app shell ---------- */
-const NAV = [['recents', 'Home', I.clock], ['drive', 'Drive', I.drive], ['photos', 'Photos', I.photo], ['favorites', 'Favorites', I.star], ['offline', 'On This Device', I.device]]
+const NAV = [['recents', 'Home', I.home], ['drive', 'My Drive', I.drive], ['shared', 'Shared', I.users], ['photos', 'Photos', I.photo], ['favorites', 'Favorites', I.star], ['offline', 'On This Device', I.device]]
+const HUE = { recents: 250, drive: 228, shared: 160, photos: 200, favorites: 38, offline: 280, trash: 4, settings: 240 }
 const NAV2 = [['trash', 'Recently Deleted', I.trash], ['settings', 'Settings', I.gear]]
-const TITLES = { recents: 'Home', drive: 'Drive', photos: 'Photos', favorites: 'Favorites', offline: 'On This Device', trash: 'Recently Deleted', settings: 'Settings', search: 'Search', cat: '' }
+const TITLES = { recents: 'Home', drive: 'My Drive', shared: 'Shared Folders', photos: 'Photos', favorites: 'Favorites', offline: 'On This Device', trash: 'Recently Deleted', settings: 'Settings', search: 'Search', cat: '' }
 const CATV = { photos: ['Photos', I.photo, '#2F9BFF'], videos: ['Videos', I.video, '#9B5CF6'], documents: ['Documents', I.doc, '#FF9F0A'], music: ['Music', I.music, '#FF375F'], other: ['Other', I.box, '#30D158'] }
 const uname = () => [tg.me.firstName, tg.me.lastName].filter(Boolean).join(' ') || tg.me.username || 'You'
 function applyTheme() {
@@ -188,12 +196,13 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme
 
 function shell() {
   const name = uname()
-  const navBtn = ([k, l, ic]) => `<button data-v="${k}" draggable="false">${ic}<span>${l}</span><span class="count" data-c="${k}"></span></button>`
+  const navBtn = ([k, l, ic]) => `<button data-v="${k}" draggable="false">${tile(ic, HUE[k])}<span>${l}</span><span class="count" data-c="${k}"></span></button>`
   document.body.innerHTML = `${WALL}<div id="app">
     <aside class="sidebar glass" id="side">
       <div class="brand">${logo(28)}<span>TeleCloud</span></div>
       <div class="side-scroll" id="sscroll"><span class="nav-ind"></span>
         <div class="nav-l">Library</div><nav class="nav">${NAV.map(navBtn).join('')}</nav>
+        <div class="nav-l">Shared with me <button class="nav-add" data-a="join" title="Join with a code">${I.plus}</button></div><nav class="nav" id="sshare"></nav>
         <div class="nav-l">Folders</div><nav class="nav" id="sfold"></nav>
         <div class="nav-l">More</div><nav class="nav">${NAV2.map(navBtn).join('')}</nav>
       </div>
@@ -203,7 +212,7 @@ function shell() {
           <div class="sc-bar" id="scbar"></div>
           <div class="sc-s" id="cachel" data-v2="settings" role="button" title="Manage storage" style="cursor:pointer">On this device: …</div>
         </button>
-        <div class="acct"><div class="avatar">${esc((name[0] || 'T').toUpperCase())}</div><div style="min-width:0;flex:1"><div class="nm">${esc(name)}</div><div class="meta-s">${tg.me.username ? '@' + esc(tg.me.username) : 'Telegram account'}</div></div>
+        <div class="acct">${avatarHTML()}<div style="min-width:0;flex:1"><div class="nm">${esc(name)}</div><div class="meta-s">${tg.me.username ? '@' + esc(tg.me.username) : 'Telegram account'}</div></div>
         <button class="iconbtn" id="logout" title="Sign out">${I.logout}</button></div>
       </div>
     </aside>
@@ -227,7 +236,7 @@ function shell() {
       <section id="content" tabindex="-1"></section>
     </main>
   </div>
-  <nav class="tabbar glass" id="tabbar"><span class="tab-ind"></span>${[NAV[0], NAV[1], NAV[2], NAV[3], ['settings', 'Settings', I.gear]].map(([k, l, ic]) => `<button data-v="${k}">${ic}<span>${l}</span></button>`).join('')}</nav>
+  <nav class="tabbar glass" id="tabbar"><span class="tab-ind"></span>${[NAV[0], NAV[1], NAV[2], NAV[3], ['settings', 'Settings', I.gear]].map(([k, l, ic]) => `<button data-v="${k}">${ic}<span>${l === 'My Drive' ? 'Drive' : l}</span></button>`).join('')}</nav>
   <button class="fab glass" id="fab" aria-label="Upload">${I.plus}</button>
   <div class="selbar glass" id="selbar"></div>
   <div id="drop"><div class="drop-card glass"><div class="big">${I.upload}</div><div id="dropt">Drop to upload</div><div class="dsub" id="drops">Files and folders go straight to Telegram</div></div></div>
@@ -240,19 +249,21 @@ const cloudBar = (st, total) => Object.entries(st).filter(([, v]) => v.size).map
 async function updateCacheLabel() { const l = $('#cachel'); if (!l) return; const [m, t] = await Promise.all([cache.list(), cache.thumbStats()]); l.textContent = `On this device: ${fmtSize(m.reduce((a, b) => a + b.size, 0) + t.size)}` }
 
 /* ---------- navigation (with history + animated transitions) ---------- */
-const navState = () => ({ view: S.view, path: S.path, cat: S.cat })
+const navState = () => ({ view: S.view, path: S.path, cat: S.cat, space: S.space })
 function go(st, dir = 'none', push = true) {
   const cur = navState()
-  if (st.view === cur.view && (st.path ?? '/') === cur.path && (st.cat ?? S.cat) === cur.cat && !S.q) return
-  if (push) { S.hist = S.hist.slice(0, S.hi + 1); S.hist.push({ view: st.view, path: st.path ?? '/', cat: st.cat ?? S.cat }); S.hi = S.hist.length - 1; history.pushState({ hi: S.hi }, '') }
+  const sp = st.view === 'drive' ? (st.space ?? (st.view === cur.view ? S.space : '')) : ''
+  if (st.view === cur.view && (st.path ?? '/') === cur.path && (st.cat ?? S.cat) === cur.cat && sp === cur.space && !S.q) return
+  if (sp) loadSpace(sp)
+  if (push) { S.hist = S.hist.slice(0, S.hi + 1); S.hist.push({ view: st.view, path: st.path ?? '/', cat: st.cat ?? S.cat, space: sp }); S.hi = S.hist.length - 1; history.pushState({ hi: S.hi }, '') }
   transition(() => {
-    S.view = st.view; S.path = st.path ?? '/'; if (st.cat) S.cat = st.cat
+    S.view = st.view; S.space = sp; S.path = st.path ?? '/'; if (st.cat) S.cat = st.cat
     S.q = ''; $('#q').value = ''; $('#mq').value = ''; S.sel.clear(); S.anim = true
     $('#side').classList.remove('open'); $('.scrim')?.remove()
     render(); $('#scroller').scrollTop = 0
   }, dir)
 }
-function histGo(d) { const n = S.hi + d; if (n < 0 || n >= S.hist.length) return; S.hi = n; const st = S.hist[n]; transition(() => { Object.assign(S, { view: st.view, path: st.path, cat: st.cat, q: '' }); S.sel.clear(); S.anim = true; render(); $('#scroller').scrollTop = 0 }, d < 0 ? 'back' : 'fwd') }
+function histGo(d) { const n = S.hi + d; if (n < 0 || n >= S.hist.length) return; S.hi = n; const st = S.hist[n]; transition(() => { Object.assign(S, { view: st.view, path: st.path, cat: st.cat, space: st.space || '', q: '' }); if (S.space) loadSpace(S.space); S.sel.clear(); S.anim = true; render(); $('#scroller').scrollTop = 0 }, d < 0 ? 'back' : 'fwd') }
 window.addEventListener('popstate', (e) => {
   if (closeTop()) { history.pushState({ hi: S.hi }, ''); return }
   const hi = e.state && e.state.hi
@@ -273,16 +284,17 @@ function closeTop() {
 
 /* ---------- render ---------- */
 function render() {
+  const shr = S.space && tg.shares.get(S.space)
   const vis = S._vis = S.view === 'settings' ? [] : visible()
-  const active = S.q ? '' : S.view === 'cat' ? 'recents' : S.view
+  const active = S.q ? '' : S.view === 'cat' ? 'recents' : S.space ? 'shared' : S.view
   $$('[data-v]').forEach((b) => !b.dataset.sv && b.classList.toggle('on', b.dataset.v === active))
-  renderSideFolders()
+  renderSideFolders(); renderSideShares()
   requestAnimationFrame(() => { placeInd(); placeSeg($('#lay')) })
   const tot = live().filter((i) => i.kind === 'file')
   const used = tot.reduce((a, b) => a + b.size, 0)
   $('#used').textContent = fmtSize(used)
   $('#scbar').innerHTML = cloudBar(catStats(), used) || '<i style="width:2%;background:var(--a)"></i>'
-  const tc = S.items.filter((i) => i.d).length; $('[data-c="trash"]').textContent = tc || ''
+  const tc = itemsOf('').filter((i) => i.d).length; $('[data-c="trash"]').textContent = tc || ''
   const oc = live().filter((i) => i.kind === 'file' && S.cached.has(i.id)).length; $('[data-c="offline"]').textContent = oc || ''
   $$('#lay button').forEach((b) => b.classList.toggle('on', b.dataset.l === S.layout))
   const settingsV = S.view === 'settings'
@@ -296,16 +308,16 @@ function render() {
   if (S.q) { cr = `<button class="cur">Results for “${esc(S.q)}”</button>`; title = 'Search' }
   else if (S.view === 'drive') {
     const parts = S.path.split('/').filter(Boolean); let acc = ''
-    cr = `<button class="${parts.length ? 'up' : 'cur'}" data-p="/" data-drop="/">Drive</button>` + parts.map((p, i) => { acc += '/' + p; return `<span class="sep">${I.chevron}</span><button class="${i === parts.length - 1 ? 'cur' : 'up'}" data-p="${esc(acc)}" data-drop="${esc(acc)}">${esc(p)}</button>` }).join('')
-    title = parts.length ? parts[parts.length - 1] : 'Drive'
+    cr = (shr ? `<button class="up" data-v2="shared">Shared</button><span class="sep">${I.chevron}</span>` : '') + `<button class="${parts.length ? 'up' : 'cur'}" data-p="/" data-drop="/">${shr ? esc(shr.name) : 'My Drive'}</button>` + parts.map((p, i) => { acc += '/' + p; return `<span class="sep">${I.chevron}</span><button class="${i === parts.length - 1 ? 'cur' : 'up'}" data-p="${esc(acc)}" data-drop="${esc(acc)}">${esc(p)}</button>` }).join('')
+    title = parts.length ? parts[parts.length - 1] : shr ? shr.name : 'My Drive'
   } else if (S.view === 'cat') { cr = `<button class="up" data-home="1">Home</button><span class="sep">${I.chevron}</span><button class="cur">${CATV[S.cat][0]}</button>`; title = CATV[S.cat][0] }
   else cr = `<button class="cur">${title}</button>`
   $('#crumbs').innerHTML = cr; $('#mtt').textContent = title; $('#mbig').textContent = title
   // mobile back button
-  const backTo = S.q ? null : S.view === 'drive' && S.path !== '/' ? (parentOf(S.path) === '/' ? 'Drive' : baseName(parentOf(S.path))) : S.view === 'cat' ? 'Home' : (S.view === 'trash' || S.view === 'offline') ? 'Settings' : null
+  const backTo = S.q ? null : S.view === 'drive' && S.space && S.path === '/' ? 'Shared' : S.view === 'drive' && S.path !== '/' ? (parentOf(S.path) === '/' ? (shr ? shr.name : 'Drive') : baseName(parentOf(S.path))) : S.view === 'cat' ? 'Home' : (S.view === 'trash' || S.view === 'offline') ? 'Settings' : null
   $('#mback').classList.toggle('show', !!backTo); $('#mbackt').textContent = backTo || ''
   const fl = vis.filter((i) => i.kind === 'file'), fo = vis.length - fl.length
-  $('#tsub').textContent = settingsV ? 'Storage, encryption & appearance' : S.view === 'recents' && !S.q ? `${tot.length} files · ${fmtSize(used)}` :
+  $('#tsub').textContent = S.view === 'shared' ? `${tg.shares.size} folder${tg.shares.size === 1 ? '' : 's'} · join with a code or share yours` : settingsV ? 'Storage, encryption & appearance' : S.view === 'recents' && !S.q ? `${tot.length} files · ${fmtSize(used)}` :
     [fo ? `${fo} folder${fo > 1 ? 's' : ''}` : '', `${fl.length} file${fl.length === 1 ? '' : 's'}`, fl.length ? fmtSize(fl.reduce((a, b) => a + b.size, 0)) : ''].filter(Boolean).join(' · ')
   // search filters
   $('#filters').innerHTML = S.q ? `<div class="chips">${[['all', 'All'], ...Object.entries(CATV).map(([k, v]) => [k, v[0]])].map(([k, l]) => `<button data-qt="${k}" class="${S.qtype === k ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''
@@ -313,10 +325,12 @@ function render() {
   const c = $('#content'); c.className = S.layout + ' v-' + S.view + (S.anim && !RM() ? ' anim' : '')
   const doAnim = S.anim; S.anim = false
   if (settingsV) { settingsView(); finish(); return }
-  if (S.loading && !S.items.length) { c.innerHTML = skeleton(); finish(); return }
+  if (S.view === 'shared') { c.innerHTML = sharedView(); finish(); return }
+  if ((S.loading && !S.items.length) || (S.space && S.spaceLoading === S.space && !S.items.length)) { c.innerHTML = (S.space ? shareHead() : '') + skeleton(); finish(); return }
   const lockedN = S.items.filter((i) => i.enc && i.locked && !i.d).length
   const lockBanner = lockedN && S.view !== 'trash' ? `<div class="banner glass-lite">${I.lock}<span><b>${lockedN} encrypted file${lockedN > 1 ? 's are' : ' is'} locked.</b> Enter your passphrase to see names and previews.</span><button class="btn primary sm" data-a="unlock">Unlock</button></div>` : ''
   if (S.view === 'recents' && !S.q) { c.innerHTML = lockBanner + homeView(vis) }
+  else if (S.space && !S.q) c.innerHTML = (S.path === '/' ? shareHead() : '') + (vis.length ? list(vis) : emptyState())
   else if (!vis.length) c.innerHTML = lockBanner + emptyState()
   else if (S.view === 'photos' && !S.q) c.innerHTML = photosView(vis)
   else if (S.view === 'trash' && !S.q) c.innerHTML = `<div class="banner glass-lite">${I.trash}<span>Items are permanently deleted after 30 days.</span><span class="grow"></span><button class="btn ghost sm" data-a="restoreall">${I.restore} Restore All</button><button class="btn ghost sm red" data-a="empty">Empty</button></div>` + list(vis)
@@ -328,7 +342,7 @@ function render() {
 const skeleton = () => `<div class="items skel">${Array.from({ length: 14 }, (_, i) => `<div class="card" style="--i:${i}"><div class="ic"><i class="sk sk-ic"></i></div><i class="sk sk-t"></i><i class="sk sk-s"></i></div>`).join('')}</div>`
 function placeInd() {
   const sc = $('#sscroll'), ind = $('.nav-ind', sc || document), on = sc && $('.nav button.on', sc)
-  if (ind) { if (!on) ind.style.opacity = 0; else { const r = on.getBoundingClientRect(), p = sc.getBoundingClientRect(); ind.style.opacity = 1; ind.style.height = r.height + 'px'; ind.style.transform = `translateY(${r.top - p.top + sc.scrollTop}px)` } }
+  if (ind) { if (!on) ind.style.opacity = 0; else { const r = on.getBoundingClientRect(), p = sc.getBoundingClientRect(); const ty = `translateY(${r.top - p.top + sc.scrollTop}px)`; if (ind.style.transform && ind.style.transform !== ty) { ind.classList.remove('moving'); void ind.offsetWidth; ind.classList.add('moving') } ind.style.opacity = 1; ind.style.height = r.height + 'px'; ind.style.transform = `translateY(${r.top - p.top + sc.scrollTop}px)` } }
   const tb = $('#tabbar'), ti = tb && $('.tab-ind', tb), ton = tb && $('button.on', tb)
   if (ti) { if (!ton) ti.style.opacity = 0; else { ti.style.opacity = 1; ti.style.width = ton.offsetWidth + 'px'; ti.style.transform = `translateX(${ton.offsetLeft}px)` } }
 }
@@ -356,11 +370,11 @@ function homeView(vis) {
     <div class="cats">${Object.entries(CATV).map(([k, [l, ic, col]], i) => `<button class="cat mat" data-cat="${k}" style="--c:${col};--i:${i}"><span class="cat-ic">${ic}</span><span class="cat-n">${l}</span><span class="cat-s">${st[k].n} item${st[k].n === 1 ? '' : 's'} · ${fmtSize(st[k].size)}</span></button>`).join('')}</div>
     <div class="section-h"><span>Recent</span>${vis.length ? `<button class="link" data-v2="drive">Show all ${I.chevron}</button>` : ''}</div>
     ${vis.length ? `<div class="grid">${list(vis.slice(0, 24), true)}</div>` : `<div class="empty sm"><div><div class="empty-ic">${folderIcon(84)}</div><h3>Nothing here yet</h3><div>Drag files anywhere on this page, or tap Upload.</div></div></div>`}
-    <div class="quick mobile-only"><button class="mat" data-v2="offline">${I.device}<span>On This Device</span>${I.chevron}</button><button class="mat" data-v2="trash">${I.trash}<span>Recently Deleted</span>${I.chevron}</button></div>`
+    <div class="quick mobile-only"><button class="mat" data-v2="favorites">${tile(I.star, 38)}<span>Favorites</span>${I.chevron}</button><button class="mat" data-v2="offline">${tile(I.device, 280)}<span>On This Device</span>${I.chevron}</button><button class="mat" data-v2="trash">${tile(I.trash, 4)}<span>Recently Deleted</span>${I.chevron}</button></div>`
 }
 function emptyState() {
   const m = {
-    drive: [S.path === '/' ? 'Your drive is empty' : 'This folder is empty', 'Drop files here, or use Upload.'],
+    drive: [S.path === '/' ? (S.space ? 'This shared folder is empty' : 'Your drive is empty') : 'This folder is empty', S.space ? 'Anything you add here is visible to every member.' : 'Drop files here, or use Upload.'],
     cat: ['Nothing here yet', 'Files of this type will show up here.'], photos: ['No photos or videos', 'Upload photos and videos to see them here.'],
     favorites: ['No favorites yet', 'Mark files with a star to find them quickly.'], trash: ['Recently Deleted is empty', 'Deleted items stay here for 30 days.'],
     offline: ['Nothing saved on this device', 'Choose “Keep on This Device” on any file to open it instantly, even offline.'],
@@ -443,11 +457,12 @@ async function settingsView() {
   const theme = localStorage.getItem('tc.theme') || 'auto'
   const oth = Math.max(0, est.usage - (est.idb ?? total) - (est.caches || 0))
   const quota = `<div class="quota"><div class="q-row"><span>Browser storage used</span><b>${fmtSize(est.usage)}${est.quota ? ` of ${fmtSize(est.quota)}` : ''}</b></div><div class="prog"><i style="width:${est.quota ? Math.max(1, Math.min(100, (est.usage / est.quota) * 100)) : 0}%"></i></div>
-    <div class="q-det"><span><i style="background:#34A3F5"></i>Cached files ${fmtSize(est.idb ?? total)}</span><span><i style="background:#8B5CF6"></i>App files ${fmtSize(est.caches || 0)}</span>${oth > 1024 ? `<span><i style="background:#94A3B8"></i>Other ${fmtSize(oth)}</span>` : ''}</div>
+    <div class="q-det"><span><i style="background:#34A3F5"></i>Cached files ${fmtSize(est.idb ?? total)}</span><span><i style="background:#8B5CF6"></i>App files ${fmtSize(est.caches || 0)}</span>${oth > 1024 ? `<span title="Space the browser itself reserves for this site: your sign-in, settings and database files. It can't be cleared without signing out."><i style="background:#94A3B8"></i>Browser overhead ${fmtSize(oth)} ${I.info}</span>` : ''}</div>
+    ${oth > 1024 && total === 0 && !(est.caches > 0) ? `<div class="q-note">${I.info}<span>Your cache is empty. The remaining ${fmtSize(oth)} is the browser’s own bookkeeping for this site (sign-in, settings, empty databases). Safari reports this as used space; it can only be removed by signing out and clearing website data.</span></div>` : ''}
     <button class="btn glassbtn sm q-wipe" id="bwipe">${I.broom} Clean Up Browser Storage</button></div>`
-  const v = tg.vault, unl = E.unlocked(), encN = S.items.filter((i) => i.enc).length
-  const e2e = !v ? `<div class="e2e-card off"><span class="e2e-ic">${I.lock}</span><div><b>End-to-end encryption is off</b><span>Encrypt files in this browser before they're uploaded. Names, contents and thumbnails become unreadable to anyone without your passphrase — including Telegram.</span></div><button class="btn primary" data-a="e2e">Set up</button></div>`
-    : `<div class="e2e-card on ${unl ? '' : 'lk'}"><span class="e2e-ic">${unl ? I.unlock : I.lock}</span><div><b>${unl ? 'Encryption is on · Unlocked on this device' : 'Encryption is on · Locked'}</b><span>${encN} encrypted file${encN === 1 ? '' : 's'} · AES-256 · Your passphrase never leaves this device.</span></div>${unl ? `<button class="btn glassbtn sm" data-a="lockv">${I.lock} Lock</button>` : `<button class="btn primary sm" data-a="unlock">${I.unlock} Unlock</button>`}</div>
+  const v = tg.vault, unl = E.unlocked(), encN = itemsOf('').filter((i) => i.enc).length
+  const e2e = !v ? `<div class="e2e-card off"><span class="e2e-ic">${I.shieldLock}</span><div><b>End-to-end encryption is off</b><span>Encrypt files in this browser before they're uploaded. Names, contents and thumbnails become unreadable to anyone without your passphrase — including Telegram.</span></div><button class="btn primary" data-a="e2e">Set up</button></div>`
+    : `<div class="e2e-card on ${unl ? '' : 'lk'}"><span class="e2e-ic">${unl ? I.shield : I.shieldLock}</span><div><b>${unl ? 'Encryption is on · Unlocked on this device' : 'Encryption is on · Locked'}</b><span>${encN} encrypted file${encN === 1 ? '' : 's'} · AES-256 · Your passphrase never leaves this device.</span></div>${unl ? `<button class="btn glassbtn sm" data-a="lockv">${I.lock} Lock</button>` : `<button class="btn primary sm" data-a="unlock">${I.unlock} Unlock</button>`}</div>
       <div class="srow"><div><b>Encrypt new uploads</b><span>When on, every file you upload is end-to-end encrypted.</span></div>${sw('e2eauto', e2eAuto())}</div>
       ${unl ? `<div class="srow"><div><b>Change passphrase</b><span>Existing files stay readable — only the key that protects them is re-wrapped.</span></div><button class="btn glassbtn sm" data-a="e2epass">${I.key} Change</button></div>` : ''}`
   c.innerHTML = `<div class="set">
@@ -463,7 +478,7 @@ async function settingsView() {
         <div class="chips">${[['all', 'All'], ...Object.entries(cache.CATS).map(([k, v]) => [k, v.label])].map(([k, l]) => `<button data-f="${k}" class="${CS.filter === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       </div>
       <div class="cl-b">${shown.length ? shown.map((r, i) => {
-        const it = S.items.find((x) => x.id === r.id); const tu = S.thumbs.get(r.id)
+        const it = findItem(r.id); const tu = S.thumbs.get(r.id)
         const ic = r.cat === 'thumbs' ? `<span class="ti" style="background:${cache.CATS.thumbs.color}">${I.photo}</span>` : tu ? `<img src="${tu}">` : fileIcon(r.name, 36)
         return `<label class="cr ${CS.sel.has(r.key) ? 'on' : ''}" style="--i:${Math.min(i, 20)}"><span class="chk"><input type="checkbox" data-ck="${esc(r.key)}" ${CS.sel.has(r.key) ? 'checked' : ''}><span></span></span>${ic}
           <span class="cr-b"><span class="cr-n">${esc(it ? it.name : r.name)}${r.pin ? `<em class="pin">${I.offline} Kept offline</em>` : ''}</span><span class="cr-s">${r.cat === 'thumbs' ? `${r.n} small images` : `${cache.CATS[r.cat].label} · used ${fmtDate(r.used / 1000)}${it ? '' : ' · no longer in cloud'}`}</span></span><b>${fmtSize(r.size)}</b><button class="iconbtn crx" data-rm="${esc(r.key)}" title="Delete from this device">${I.trash}</button></label>`
@@ -512,8 +527,8 @@ async function settingsView() {
 
     <div class="set-h"><h2>Account</h2></div>
     <div class="panel mat rows">
-      <div class="srow"><div class="acc"><div class="avatar lg">${esc((uname()[0] || 'T').toUpperCase())}</div><div><b>${esc(uname())}</b><span>${tg.me.username ? '@' + esc(tg.me.username) : ''}${tg.me.phone ? ' · +' + esc(tg.me.phone) : ''}</span></div></div><button class="btn glassbtn sm red" id="slogout">${I.logout} Sign out</button></div>
-      <div class="srow"><div><b>About TeleCloud</b><span>Version 3.5 · Open source · Runs entirely in your browser</span></div><a class="btn glassbtn sm" href="https://github.com/amitsami/TeleCloud-Drive" target="_blank" rel="noopener">${I.github} GitHub</a></div>
+      <div class="srow"><div class="acc">${avatarHTML('lg')}<div><b>${esc(uname())}</b><span>${tg.me.username ? '@' + esc(tg.me.username) : ''}${tg.me.phone ? ' · +' + esc(tg.me.phone) : ''}</span></div></div><button class="btn glassbtn sm red" id="slogout">${I.logout} Sign out</button></div>
+      <div class="srow"><div><b>About TeleCloud</b><span>Version 4.0 · Open source · Runs entirely in your browser</span></div><a class="btn glassbtn sm" href="https://github.com/amitsami/TeleCloud-Drive" target="_blank" rel="noopener">${I.github} GitHub</a></div>
     </div>
   </div>`
   $$('.segc', c).forEach(placeSeg)
@@ -575,7 +590,7 @@ async function wipeFlow(before) {
   try {
     S.thumbs.forEach((u) => URL.revokeObjectURL(u)); S.thumbs.clear(); dropBlobs(); S.cached.clear()
     await cache.wipeBrowserStorage(ok)
-    if (!ok.keepKey) { await E.lock(); S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file' } }) }
+    if (!ok.keepKey) { await E.lock(); itemsOf('').forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file' } }) }
     await sleep(300); const after = (await cache.estimate()).usage || 0
     toast(`Freed ${fmtSize(Math.max(0, before - after))} · your cloud files are untouched`)
   } catch (e) { toast(errMsg(e), 'red') } finally { t.close() }
@@ -598,7 +613,7 @@ async function pumpThumbs() {
     ;(async () => {
       try {
         let blob = await cache.getThumb(id)
-        if (!blob) { const it = S.items.find((i) => i.id === id); if (it && !it.locked) { blob = await tg.downloadThumb(it); if (blob) cache.putThumb(id, blob) } }
+        if (!blob) { const it = findItem(id); if (it && !it.locked) { blob = await tg.downloadThumb(it); if (blob) cache.putThumb(id, blob) } }
         if (blob) { const u = URL.createObjectURL(blob); S.thumbs.set(id, u); setThumb(id, u) }
       } catch {} finally { thumbBusy--; pumpThumbs() }
     })()
@@ -699,14 +714,14 @@ function track(t, frac, bytes) {
 /* ---------- uploads ---------- */
 async function enqueueUploads(entries, from) {
   const max = tg.MAX_SIZE()
-  let encrypt = e2eAuto()
+  let encrypt = e2eAuto() && !S.space
   if (encrypt && !E.unlocked()) { if (!(await unlockFlow('Unlock to upload encrypted files'))) { toast('Upload cancelled — encryption is locked', 'red'); return } }
   let first = null
   const taken = new Map(); const tk = (p) => taken.get(p) || (taken.set(p, new Set([...live().filter((i) => i.kind === 'file' && i.path === p).map((i) => i.name.toLowerCase()), ...S.transfers.filter((x) => x.kind === 'up' && active(x) && x.path === p).map((x) => x.name.toLowerCase())])), taken.get(p))
   for (const { file, path } of entries) {
     if (file.size > max) { toast(`${file.name} is larger than ${fmtSize(max)} (Telegram limit)`, 'red'); continue }
     if (!file.size && !file.type && !/\.[a-z0-9]+$/i.test(file.name)) continue
-    const t = { id: ++trId, kind: 'up', name: uniqueName(path, file.name, tk(path)), size: file.size, file, path, p: 0, bytes: 0, state: 'wait', ctl: {}, enc: encrypt }
+    const t = { id: ++trId, src: S.space, kind: 'up', name: uniqueName(path, file.name, tk(path)), size: file.size, file, path, p: 0, bytes: 0, state: 'wait', ctl: {}, enc: encrypt }
     if (/^image\//.test(file.type) && file.size < 25e6) t.thumb = URL.createObjectURL(file)
     S.transfers.push(t); first = first || t
   }
@@ -722,8 +737,8 @@ async function pumpUploads() {
     ;(async () => {
       try {
         const { thumb, video } = await makeThumb(t.file)
-        const it = await tg.uploadFile(t.file, t.path, { name: t.name, onProgress: (f, b) => track(t, f, b), ctl: t.ctl, thumb, video, encrypt: t.enc })
-        if (it) { S.items.unshift(it); S.fresh.add(it.id); if (thumb) { const u = URL.createObjectURL(thumb); S.thumbs.set(it.id, u); cache.putThumb(it.id, thumb); it.hasThumb = true } }
+        const it = await tg.uploadFile(t.file, t.path, { src: t.src || '', name: t.name, onProgress: (f, b) => track(t, f, b), ctl: t.ctl, thumb, video, encrypt: t.enc })
+        if (it) { itemsOf(t.src).unshift(it); S.fresh.add(it.id); if (thumb) { const u = URL.createObjectURL(thumb); S.thumbs.set(it.id, u); cache.putThumb(it.id, thumb); it.hasThumb = true } }
         t.state = 'done'; t.p = 1; t.bytes = t.size; render()
       } catch (e) { if (t.state !== 'fail') { t.state = 'fail'; t.err = errMsg(e) } }
       finally { upRunning--; t.file = null; renderTransfers(); pumpUploads() }
@@ -893,7 +908,7 @@ function changePass() {
 }
 async function decryptAll() {
   if (!E.unlocked()) return
-  for (const it of S.items) if (it.enc && it.locked) { try { await tg.openItem(it, tg.thumbMsgs) } catch {} }
+  for (const it of itemsOf('')) if (it.enc && it.locked) { try { await tg.openItem(it, tg.thumbMsgs) } catch {} }
 }
 
 /* ---------- keyboard shortcuts ---------- */
@@ -920,7 +935,7 @@ async function busy(label, fn) {
 async function ensureFolderMsg(path) {
   const f = S.items.find((i) => i.kind === 'folder' && i.path === path && !i.d)
   if (f) return f
-  const nf = await tg.createFolder(path); S.items.unshift(nf); return nf
+  const nf = await tg.createFolder(path, S.space); S.items.unshift(nf); return nf
 }
 async function newFolder() {
   if (S.view !== 'drive') go({ view: 'drive', path: '/' }, 'fwd')
@@ -944,7 +959,7 @@ async function rename(it) {
 }
 async function moveFolder(from, to, label) {
   const ds = descendants(from)
-  try { if (!ds.some((i) => i.kind === 'folder' && i.path === from)) await tg.createFolder(to).then((f) => S.items.unshift(f)) } catch (e) { return toast(errMsg(e), 'red') }
+  try { if (!ds.some((i) => i.kind === 'folder' && i.path === from)) await tg.createFolder(to, S.space).then((f) => S.items.unshift(f)) } catch (e) { return toast(errMsg(e), 'red') }
   await runAll(ds, async (i) => { const old = i.path; i.path = to + i.path.slice(from.length); try { await tg.editItem(i) } catch (e) { i.path = old; throw e } }, label)
   render()
 }
@@ -964,12 +979,13 @@ async function toggleFav(items) {
   render(); if (files.length) toast(v ? 'Added to Favorites' : 'Removed from Favorites', '', 1800)
 }
 async function trash(items) {
+  if (items.some((i) => i.src)) return purge(items.filter((i) => i.src), true, 'Delete for everyone?', 'These items will be removed from the shared folder for all members.')
   const now = Math.floor(Date.now() / 1000)
   await leave(items)
   const all = []
   for (const it of items) {
     if (it.kind === 'file') all.push(it)
-    else { const ds = descendants(it.path); if (!ds.some((i) => i.kind === 'folder' && i.path === it.path)) { try { const f = await tg.createFolder(it.path); S.items.unshift(f); ds.push(f) } catch (e) { toast(errMsg(e), 'red'); continue } } all.push(...ds) }
+    else { const ds = descendants(it.path); if (!ds.some((i) => i.kind === 'folder' && i.path === it.path)) { try { const f = await tg.createFolder(it.path, S.space); S.items.unshift(f); ds.push(f) } catch (e) { toast(errMsg(e), 'red'); continue } } all.push(...ds) }
   }
   await runAll([...new Set(all)], async (i) => { i.d = now; try { await tg.editItem(i) } catch (e) { i.d = 0; throw e } }, 'Moving to Recently Deleted…')
   S.sel.clear(); render(); toast(`${items.length} item${items.length > 1 ? 's' : ''} moved to Recently Deleted`)
@@ -979,22 +995,25 @@ async function restore(items) {
   const r = await runAll(items, async (it) => { const o = it.d; it.d = 0; try { await tg.editItem(it) } catch (e) { it.d = o; throw e } }, 'Restoring…')
   S.sel.clear(); render(); if (r.ok) toast(`Restored ${r.ok} item${r.ok > 1 ? 's' : ''}`)
 }
-async function purge(items, ask = true) {
-  if (ask && !(await confirmBox('Delete forever?', `${items.length} item${items.length > 1 ? 's' : ''} will be permanently deleted from Telegram. This can't be undone.`, 'Delete', true))) return
+async function purge(items, ask = true, title = 'Delete forever?', text) {
+  if (ask && !(await confirmBox(title, text || `${items.length} item${items.length > 1 ? 's' : ''} will be permanently deleted from Telegram. This can't be undone.`, 'Delete', true))) return
+  const vfold = items.filter((i) => i.kind === 'folder'); for (const f of vfold) for (const d of descendants(f.path)) if (!items.includes(d)) items.push(d)
+  items = items.filter((i) => typeof i.id === 'number')
   await leave(items)
   await busy('Deleting…', async () => {
     const ids = items.map((i) => i.id).filter((x) => typeof x === 'number')
     const gone = new Set(ids), used = new Set(S.items.filter((i) => !gone.has(i.id) && i.sec && i.sec.th).map((i) => i.sec.th))
     const extra = [...new Set(items.map((i) => i.sec && i.sec.th).filter((t) => t && !used.has(t)))]
-    await tg.deleteIds([...ids, ...extra]); await cache.remove(ids).catch(() => {})
-    const set = new Set(ids); S.items = S.items.filter((i) => !set.has(i.id))
+    const src = items[0].src || ''
+    await tg.deleteIds([...ids, ...extra], src); await cache.remove(ids).catch(() => {})
+    const set = new Set(ids); S.spaces[src] = itemsOf(src).filter((i) => !set.has(i.id))
   })
   S.sel.clear(); render()
 }
 async function share(items) {
   const files = items.filter((i) => i.kind === 'file')
   if (files.some((f) => f.enc) && !(await confirmBox('Send encrypted files?', 'Encrypted files arrive in Saved Messages as unreadable data — they can only be opened here in TeleCloud.', 'Send anyway'))) return
-  await busy('Sending to Saved Messages…', () => tg.sendToSaved(files.map((f) => f.id)))
+  await busy('Sending to Saved Messages…', () => tg.sendToSaved(files.map((f) => f.id), files[0].src || ''))
   toast(`Sent to your Saved Messages in Telegram`)
 }
 function act(a, items, src) {
@@ -1015,7 +1034,10 @@ function act(a, items, src) {
   if (a === 'open' || a === 'preview') return open(items[0])
   if (a === 'info') return info(items[0])
   if (a === 'share') return share(items)
-  if (a === 'reveal') { go({ view: 'drive', path: items[0].path }, 'fwd'); setTimeout(() => { S.sel = new Set([key(items[0])]); updateSel(); cardOf(items[0])?.scrollIntoView({ block: 'center', behavior: 'smooth' }) }, 350) }
+  if (a === 'savemine') return copyCross(items, '')
+  if (a === 'toshare') return copyCross(items, null)
+  if (a === 'sharefolder') return shareFolderFlow(items[0])
+  if (a === 'reveal') { go({ view: 'drive', path: items[0].path, space: items[0].src || '' }, 'fwd'); setTimeout(() => { S.sel = new Set([key(items[0])]); updateSel(); cardOf(items[0])?.scrollIntoView({ block: 'center', behavior: 'smooth' }) }, 350) }
 }
 async function open(it) {
   if (!it) return
@@ -1043,7 +1065,7 @@ function ctxMenu(x, y, items) {
   const html = S.view === 'trash' ? B('restore', I.restore, 'Restore') + '<hr>' + B('purge', I.trash, 'Delete Forever', 'red')
     : (one ? (it.kind === 'folder' ? B('open', I.drive, 'Open', '', '↵') : B('preview', I.eye, 'Quick Preview', '', 'Space')) : '') +
       (files.length || items.some((i) => i.kind === 'folder') ? B('download', I.download, items.some((i) => i.kind === 'folder') ? 'Download as ZIP' : files.length > 1 ? `Download ${files.length} Files` : 'Download') : '') + (files.length > 1 && !items.some((i) => i.kind === 'folder') ? B('zip', I.zip, 'Download as ZIP') : '') + (one && files.length && isText(it) && it.size < 2097152 ? B('edit', I.note, 'Edit Text') : '') + (files.length ? (pinned ? '' : B('pin', I.offline, 'Keep on This Device')) + (files.some((f) => S.cached.has(f.id)) ? B('unpin', I.broom, 'Delete from This Device') : '') + B('share', I.send, 'Send to Saved Messages') : '') + '<hr>' +
-      (one && !it.locked ? B('rename', I.edit, 'Rename') : '') + B('move', I.move, 'Move to…') + B('dup', I.copy, 'Duplicate') + B('copy', I.copy, 'Copy to…') + (files.length ? B('fav', files.every((f) => f.fav) ? I.starFill : I.star, files.every((f) => f.fav) ? 'Remove from Favorites' : 'Add to Favorites') : '') +
+      (one && !it.locked ? B('rename', I.edit, 'Rename') : '') + B('move', I.move, 'Move to…') + B('dup', I.copy, 'Duplicate') + B('copy', I.copy, 'Copy to…') + (it.src ? B('savemine', I.download, 'Save to My Drive') : (tg.shares.size && !items.some((i) => i.enc) ? B('toshare', I.users, 'Add to Shared Folder…') : '') + (one && it.kind === 'folder' ? B('sharefolder', I.share, 'Share Folder…') : '')) + (files.length && !it.src ? B('fav', files.every((f) => f.fav) ? I.starFill : I.star, files.every((f) => f.fav) ? 'Remove from Favorites' : 'Add to Favorites') : '') +
       (one ? B('info', I.info, 'Get Info', '', '⌘I') : '') + (one && files.length && S.view !== 'drive' ? B('reveal', I.drive, 'Show in Folder') : '') + '<hr>' + B('delete', I.trash, 'Delete', 'red', '⌫')
   menu(x, y, html, (b) => act(b.dataset.ca, items, cardOf(it)))
 }
@@ -1248,7 +1270,7 @@ async function copyItems(items, dest) {
     void base
   }
   for (const p of [...new Set(folders)]) { try { const f = await ensureFolderMsg(p); S.fresh.add(f.id) } catch (e) { toast(errMsg(e), 'red'); return } }
-  const r = await runAll(jobs, async (j) => { const c = await tg.copyItem(j.it, { path: j.path, name: j.name }); S.items.unshift(c); S.fresh.add(c.id); if (S.thumbs.has(j.it.id)) S.thumbs.set(c.id, S.thumbs.get(j.it.id)) }, 'Copying…', 3)
+  const r = await runAll(jobs, async (j) => { const c = await tg.copyItem(j.it, { path: j.path, name: j.name }); itemsOf(c.src).unshift(c); S.fresh.add(c.id); if (S.thumbs.has(j.it.id)) S.thumbs.set(c.id, S.thumbs.get(j.it.id)) }, 'Copying…', 3)
   S.sel.clear(); render()
   if (r.ok || folders.length) toast(`${dup ? 'Duplicated' : 'Copied'} ${items.length} item${items.length > 1 ? 's' : ''}${dup ? '' : ` to ${dest === '/' ? 'Drive' : baseName(dest)}`}`)
 }
@@ -1338,7 +1360,7 @@ async function editText(it, after) {
     const file = new File([r.text], r.name, { type: it.mime || 'text/plain' })
     const nu = await tg.replaceFile({ ...it, name: r.name }, file)
     await cache.remove([it.id]).catch(() => {}); dropBlobs([it.id]); S.cached.delete(it.id)
-    S.items = S.items.map((x) => (x.id === it.id ? nu : x)); S.fresh.add(nu.id)
+    S.spaces[it.src || ''] = itemsOf(it.src).map((x) => (x.id === it.id ? nu : x)); S.fresh.add(nu.id)
     toast('Saved to your cloud'); after && after(nu)
   })
 }
@@ -1356,6 +1378,166 @@ async function findDups() {
   if (ok) await trash(extra)
 }
 async function restoreAll() { const t = S.items.filter((i) => i.d); if (t.length) await restore(t) }
+
+/* ---------- shared folders: join with a code, share yours ---------- */
+let photoURL = null
+function avatarHTML(cls = '') {
+  const n = uname()
+  return photoURL ? `<img class="avatar ${cls}" src="${photoURL}" alt="">` : `<div class="avatar ${cls}" style="--h:${[...n].reduce((a, c) => a + c.charCodeAt(0), 0) % 360}">${esc((n[0] || 'T').toUpperCase())}</div>`
+}
+async function loadAvatar() {
+  try {
+    const cachedU = localStorage.getItem('tc.avatar'); if (cachedU) { photoURL = cachedU; paintAvatars() }
+    const b = await tg.myPhoto(); if (!b) { if (cachedU) { localStorage.removeItem('tc.avatar'); photoURL = null; paintAvatars() } return }
+    const u = await new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b) })
+    if (u.length < 120000) localStorage.setItem('tc.avatar', u); photoURL = u; paintAvatars()
+  } catch {}
+}
+function paintAvatars() { $$('.avatar').forEach((el) => { const lg = el.classList.contains('lg'); el.outerHTML = avatarHTML(lg ? 'lg' : '') }) }
+const shareList = () => [...tg.shares.values()].sort((a, b) => a.name.localeCompare(b.name))
+const shareHue = (k) => [...String(k)].reduce((a, c) => a + c.charCodeAt(0) * 7, 0) % 360
+function renderSideShares() {
+  const el = $('#sshare'); if (!el) return
+  const l = shareList(); const sig = l.map((s) => s.key + s.name).join('|') + '#' + S.space
+  if (el._sig === sig) return; el._sig = sig
+  el.innerHTML = l.length ? l.slice(0, 10).map((s) => `<button data-sh="${s.key}" class="${S.space === s.key && S.view === 'drive' ? 'on' : ''}">${folderIcon(18, shareHue(s.key))}<span>${esc(s.name)}</span>${s.owner ? '' : `<span class="count">${I.users}</span>`}</button>`).join('')
+    : `<button class="nav-cta" data-a="join">${I.ticket}<span>Join with a code</span></button>`
+}
+function sharedView() {
+  const l = shareList()
+  return `<div class="share-hero mat">
+      <div class="sh-art">${folderIcon(92, 160)}<span class="sh-badge">${I.users}</span></div>
+      <div class="sh-t"><h2>Shared folders</h2><p>Create a folder that others can join with a code. Everyone with the code can view, add and download files — and pass the code on to friends.</p>
+        <div class="hero-acts"><button class="btn primary" data-a="join">${I.ticket} Join with a code</button><button class="btn glassbtn" data-a="newshare">${I.folderPlus} New shared folder</button></div></div>
+    </div>
+    ${l.length ? `<div class="section-h"><span>Your shared folders</span></div><div class="share-grid">${l.map((s, i) => `<div class="share-card mat" style="--i:${i};--h:${shareHue(s.key)}">
+        <button class="sc-open" data-a="opensh" data-k="${s.key}">${folderIcon(54, shareHue(s.key))}<div class="sc-b"><b>${esc(s.name)}</b><span>${s.owner ? `${I.crown} Owner` : 'Member'}${s.count ? ` · ${s.count} member${s.count === 1 ? '' : 's'}` : ''}${S.spaces[s.key] ? ` · ${S.spaces[s.key].filter((x) => x.kind === 'file').length} files` : ''}</span></div></button>
+        <div class="sc-code">${s.code ? `<button class="codechip" data-copy="${esc(s.code)}" title="Copy code">${I.ticket}<code>${esc(s.code)}</code>${I.copy}</button>` : '<span class="muted">Code unavailable</span>'}
+          <button class="iconbtn" data-a="sharecode" data-k="${s.key}" title="Share">${I.share}</button><button class="iconbtn" data-a="members" data-k="${s.key}" title="Members">${I.users}</button></div>
+      </div>`).join('')}</div>` : `<div class="empty sm"><div><div class="empty-ic">${folderIcon(84, 160)}</div><h3>No shared folders yet</h3><div>Got a code from a friend? Tap <b>Join with a code</b>.</div></div></div>`}`
+}
+function shareHead() {
+  const s = tg.shares.get(S.space); if (!s) return ''
+  return `<div class="banner glass-lite share-bar">${folderIcon(30, shareHue(s.key))}<span><b>${esc(s.name)}</b> · ${s.owner ? 'You own this folder' : 'Shared with you'}${s.count ? ` · ${s.count} member${s.count === 1 ? '' : 's'}` : ''}</span><span class="grow"></span>
+    ${s.code ? `<button class="codechip" data-copy="${esc(s.code)}" title="Copy code">${I.ticket}<code>${esc(s.code)}</code>${I.copy}</button>` : ''}
+    <button class="btn glassbtn sm" data-a="sharecode">${I.share} Invite</button><button class="iconbtn" data-a="members" title="Members">${I.users}</button><button class="iconbtn" data-a="leave" title="${s.owner ? 'Delete shared folder' : 'Leave'}">${s.owner ? I.trash : I.logout}</button></div>`
+}
+const joinLink = (code) => `${location.origin}${location.pathname}#join=${encodeURIComponent(code)}`
+async function copyText(t, msg = 'Copied') { try { await navigator.clipboard.writeText(t) } catch { const a = document.createElement('textarea'); a.value = t; document.body.append(a); a.select(); document.execCommand('copy'); a.remove() } toast(msg, '', 1800) }
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-copy]'); if (b) { e.preventDefault(); e.stopPropagation(); copyText(b.dataset.copy, 'Code copied — send it to anyone you want to invite') } }, true)
+
+async function joinFlow(pre = '') {
+  const code = await new Promise((res) => modal(`<div class="mh">${tile(I.ticket, 160)}<div><h3>Join a shared folder</h3><p>Paste the code (or link) someone shared with you.</p></div></div>
+    <input class="field code-in" id="jc" placeholder="TC-xxxxxxxxxxxx" value="${esc(pre)}" spellcheck="false" autocomplete="off">
+    <div class="peek" id="jp"></div>
+    <div class="acts"><button class="btn glassbtn" id="c">Cancel</button><button class="btn primary" id="o" disabled>${I.join} Join</button></div>`, (bg, close) => {
+    const i = $('#jc', bg), ok = $('#o', bg), pk = $('#jp', bg); let v = null, t, seq = 0; bg._onclose = () => res(v)
+    const check = async () => {
+      const my = ++seq; const val = i.value.trim(); ok.disabled = true
+      if (val.length < 8) { pk.innerHTML = ''; return }
+      pk.innerHTML = `<span class="spin s14"></span> Checking code…`
+      try { const r = await tg.peekShare(val); if (my !== seq) return
+        pk.innerHTML = `<div class="peek-card">${folderIcon(40, 160)}<div><b>${esc(r.name || 'Shared folder')}</b><span>${r.count ? `${r.count} member${r.count === 1 ? '' : 's'}` : 'Shared folder'}${r.joined ? ' · already joined' : ''}</span></div></div>${r.ok === false ? '<div class="warn">This code belongs to a Telegram group that isn’t a TeleCloud folder.</div>' : ''}`
+        ok.disabled = false; ok.innerHTML = r.joined ? `${I.fwd} Open` : `${I.join} Join`
+      } catch (e) { if (my === seq) pk.innerHTML = `<div class="warn">${esc(errMsg(e))}</div>` }
+    }
+    i.oninput = () => { clearTimeout(t); t = setTimeout(check, 350) }; if (pre) check()
+    ok.onclick = () => { v = i.value.trim(); close() }; i.onkeydown = (e) => e.key === 'Enter' && !ok.disabled && ok.click(); $('#c', bg).onclick = close
+    setTimeout(() => i.focus(), 80)
+  }))
+  if (!code) return
+  const t = toast('Joining…', 'busy', 0)
+  try { const sh = await tg.joinShare(code); t.close(); toast(`Joined “${sh.name}”`); render(); go({ view: 'drive', path: '/', space: sh.key }, 'fwd') }
+  catch (e) { t.close(); toast(errMsg(e), 'red', 5000) }
+}
+async function newShareFlow(name, after) {
+  name = name || (await promptBox('New shared folder', 'People who join with the code can see and add files.', 'Shared folder', 'Create')); if (!name) return null
+  const t = toast('Creating shared folder…', 'busy', 0)
+  try { const sh = await tg.createShare(name); S.spaces[sh.key] = []; t.close(); render(); if (after) return sh; go({ view: 'drive', path: '/', space: sh.key }, 'fwd'); setTimeout(() => shareCodeModal(sh.key, true), 500); return sh }
+  catch (e) { t.close(); toast(errMsg(e), 'red', 5000); return null }
+}
+function shareCodeModal(key, fresh) {
+  const s = tg.shares.get(key); if (!s) return
+  const link = s.code ? joinLink(s.code) : ''
+  modal(`<div class="mh">${folderIcon(52, shareHue(key))}<div><h3>${fresh ? 'Your shared folder is ready' : 'Invite people'}</h3><p>Anyone with this code can join <b>${esc(s.name)}</b>. Members can share the same code with others.</p></div></div>
+    <div class="bigcode">${s.code ? `<code>${esc(s.code)}</code>` : '<span class="muted">No code yet</span>'}</div>
+    <div class="code-acts"><button class="btn glassbtn" data-copy="${esc(s.code || '')}">${I.copy} Copy code</button><button class="btn glassbtn" id="cl">${I.link} Copy link</button>${navigator.share ? `<button class="btn glassbtn" id="sh">${I.share} Share…</button>` : ''}</div>
+    <div class="howto"><div><span>1</span>Send the code to a friend</div><div><span>2</span>They open TeleCloud → <b>Shared</b> → <b>Join with a code</b></div><div><span>3</span>Everyone sees the same files instantly</div></div>
+    <div class="acts">${s.owner ? `<button class="btn ghost sm" id="rs">${I.refresh} New code</button>` : ''}<span class="grow"></span><button class="btn primary" id="o">Done</button></div>`, (bg, close) => {
+    $('#o', bg).onclick = close
+    $('#cl', bg).onclick = () => copyText(link, 'Invite link copied')
+    const sh = $('#sh', bg); if (sh) sh.onclick = () => navigator.share({ title: `Join “${s.name}” on TeleCloud`, text: `Join my shared folder “${s.name}” on TeleCloud. Code: ${s.code}`, url: link }).catch(() => {})
+    const rs = $('#rs', bg); if (rs) rs.onclick = async () => { if (!(await confirmBox('Create a new code?', 'The old code stops working. People who already joined stay in.', 'New code', true))) return; try { await tg.resetShareCode(key); close(); shareCodeModal(key); render() } catch (e) { toast(errMsg(e), 'red') } }
+  })
+}
+async function membersModal(key) {
+  const s = tg.shares.get(key); if (!s) return
+  modal(`<div class="mh">${tile(I.users, 160)}<div><h3>Members</h3><p>${esc(s.name)}</p></div></div><div class="members" id="mm"><span class="spin s18"></span></div><div class="acts"><button class="btn glassbtn" data-a="x" id="inv">${I.share} Invite</button><span class="grow"></span><button class="btn primary" id="o">Done</button></div>`, async (bg, close) => {
+    $('#o', bg).onclick = close; $('#inv', bg).onclick = () => { close(); shareCodeModal(key) }
+    try { const l = await tg.shareMembers(key); s.count = l.length; $('#mm', bg).innerHTML = l.map((u) => `<div class="mem"><div class="avatar" style="--h:${[...u.name].reduce((a, c) => a + c.charCodeAt(0), 0) % 360}">${esc(u.name[0].toUpperCase())}</div><div><b>${esc(u.name)}${String(u.id) === String(tg.me.id) ? ' (you)' : ''}</b><span>${u.username ? '@' + esc(u.username) : 'Telegram user'}</span></div>${u.owner ? `<em>${I.crown} Owner</em>` : ''}</div>`).join('') }
+    catch (e) { $('#mm', bg).innerHTML = `<div class="warn">${esc(errMsg(e))}</div>` }
+  })
+}
+async function leaveFlow(key) {
+  const s = tg.shares.get(key); if (!s) return
+  if (!(await confirmBox(s.owner ? `Delete “${s.name}”?` : `Leave “${s.name}”?`, s.owner ? 'The shared folder and every file in it will be deleted for all members. This can’t be undone.' : 'You’ll lose access until someone shares the code with you again.', s.owner ? 'Delete for everyone' : 'Leave', true))) return
+  const t = toast(s.owner ? 'Deleting…' : 'Leaving…', 'busy', 0)
+  try { await tg.leaveShare(key); delete S.spaces[key]; t.close(); toast(s.owner ? 'Shared folder deleted' : 'Left the shared folder'); go({ view: 'shared', space: '' }, 'back'); render() }
+  catch (e) { t.close(); toast(errMsg(e), 'red') }
+}
+async function pickShare() {
+  const l = shareList(); if (!l.length) return null
+  return new Promise((res) => modal(`<h3>Add to shared folder</h3><p>Copies go to the folder for every member to see.</p><div class="tree">${l.map((s) => `<button data-k="${s.key}">${folderIcon(22, shareHue(s.key))}<span>${esc(s.name)}</span></button>`).join('')}</div><div class="acts"><button class="btn glassbtn" id="c">Cancel</button></div>`, (bg, close) => {
+    let v = null; bg._onclose = () => res(v); $('#c', bg).onclick = close
+    bg.querySelectorAll('.tree button').forEach((b) => (b.onclick = () => { v = b.dataset.k; close() }))
+  }))
+}
+/** Copy between your drive and shared folders (server-side, no re-upload). to = '' (My Drive) or null (ask) */
+async function copyCross(items, to) {
+  if (to === null) { to = await pickShare(); if (!to) return }
+  if (to && items.some((i) => i.enc)) return toast('Encrypted files can’t be shared — only you hold the key', 'red', 4500)
+  if (to) await loadSpace(to)
+  const jobs = []; const dst = itemsOf(to); const names = new Set(dst.filter((i) => i.kind === 'file' && i.path === '/').map((i) => i.name.toLowerCase()))
+  const folders = new Set()
+  for (const it of items) {
+    if (it.kind === 'file') { jobs.push({ it, path: '/', name: uniqueName('/', it.name, names) }); continue }
+    const base = parentOf(it.path)
+    for (const f of itemsOf(it.src).filter((x) => !x.d && x.kind === 'file' && under(x.path, it.path))) { const p = tg.normPath('/' + f.path.slice(base === '/' ? 0 : base.length)); folders.add(p); let q = parentOf(p); while (q !== '/') { folders.add(q); q = parentOf(q) } jobs.push({ it: f, path: p, name: f.name }) }
+    folders.add(tg.normPath('/' + it.path.slice(base === '/' ? 0 : base.length)))
+  }
+  const have = new Set(dst.filter((i) => i.kind === 'folder' && !i.d).map((i) => i.path))
+  try { for (const p of [...folders].sort()) if (!have.has(p)) { const f = await tg.createFolder(p, to); dst.unshift(f) } } catch (e) { return toast(errMsg(e), 'red') }
+  const r = await runAll(jobs, async (j) => { const c = await tg.copyItem(j.it, { path: j.path, name: j.name, src: to }); itemsOf(to).unshift(c); if (S.thumbs.has(j.it.id)) S.thumbs.set(c.id, S.thumbs.get(j.it.id)) }, 'Copying…', 3)
+  render(); if (r.ok) toast(`Copied ${r.ok} file${r.ok > 1 ? 's' : ''} to ${to ? tg.shares.get(to).name : 'My Drive'}`)
+}
+async function shareFolderFlow(folder) {
+  const sh = await newShareFlow(folder.name, true); if (!sh) return
+  await copyCross([folder], sh.key)
+  go({ view: 'drive', path: '/', space: sh.key }, 'fwd'); setTimeout(() => shareCodeModal(sh.key, true), 500)
+}
+/* #join=CODE links */
+function checkJoinLink() {
+  const c = sessionStorage.getItem('tc.join'); if (!c) return
+  sessionStorage.removeItem('tc.join'); setTimeout(() => joinFlow(c), 700)
+}
+
+/* ---------- liquid glass: pointer light + refraction (Chromium) ---------- */
+function liquid() {
+  if (liquid.done) return; liquid.done = true
+  let raf = 0, last = null
+  document.addEventListener('pointermove', (e) => {
+    last = e; if (raf) return
+    raf = requestAnimationFrame(() => {
+      raf = 0; const g = last.target.closest && last.target.closest('.glass'); if (!g) return
+      const r = g.getBoundingClientRect(); g.style.setProperty('--mx', `${last.clientX - r.left}px`); g.style.setProperty('--my', `${last.clientY - r.top}px`)
+    })
+  }, { passive: true })
+  const chromium = !!(navigator.userAgentData && navigator.userAgentData.brands && navigator.userAgentData.brands.some((b) => /Chromium/.test(b.brand)))
+  if (chromium && !RM() && !document.getElementById('liquidsvg')) {
+    document.body.insertAdjacentHTML('beforeend', `<svg id="liquidsvg" width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="liquid" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="0.012 0.018" numOctaves="2" seed="7" result="n"/><feGaussianBlur in="n" stdDeviation="2" result="nb"/><feDisplacementMap in="SourceGraphic" in2="nb" scale="22" xChannelSelector="R" yChannelSelector="G"/></filter></svg>`)
+    document.documentElement.classList.add('refract')
+  }
+}
 
 /* ---------- drag & drop uploads (files + folders) ---------- */
 async function collectEntries(dt, base) {
@@ -1381,12 +1563,14 @@ async function uploadEntries(list, from) {
 
 /* ---------- bindings ---------- */
 function bind() {
-  const goV = (v) => go({ view: v, path: '/' }, 'none')
+  const goV = (v) => go({ view: v, path: '/', space: '' }, 'none')
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b && !e.target.closest('#content')) goV(b.dataset.v) })
-  $('#sfold').onclick = (e) => { const b = e.target.closest('[data-fp]'); if (b) go({ view: 'drive', path: b.dataset.fp }, 'fwd') }
+  $('#sfold').onclick = (e) => { const b = e.target.closest('[data-fp]'); if (b) go({ view: 'drive', path: b.dataset.fp, space: '' }, 'fwd') }
+  $('#sshare').onclick = (e) => { const b = e.target.closest('[data-sh]'); if (b) go({ view: 'drive', path: '/', space: b.dataset.sh }, 'fwd') }
   $('#hb').onclick = () => histGo(-1); $('#hf').onclick = () => histGo(1)
   $('#mback').onclick = () => {
-    if (S.view === 'drive' && S.path !== '/') go({ view: 'drive', path: parentOf(S.path) }, 'back')
+    if (S.view === 'drive' && S.space && S.path === '/') go({ view: 'shared' }, 'back')
+    else if (S.view === 'drive' && S.path !== '/') go({ view: 'drive', path: parentOf(S.path) }, 'back')
     else if (S.view === 'cat') go({ view: 'recents' }, 'back')
     else go({ view: 'settings' }, 'back')
   }
@@ -1426,7 +1610,7 @@ function bind() {
     for (const f of e.target.files) { const rel = (f.webkitRelativePath || f.name).split('/'); const dir = join(base, rel.slice(0, -1).join('/')); list.push({ file: f, path: dir }); let p = dir; while (p !== base && p !== '/') { list.push({ dir: p }); p = parentOf(p) } }
     uploadEntries(list, upFrom); e.target.value = ''
   }
-  $('#logout').onclick = async () => { if (await confirmBox('Sign out?', 'Your files stay safe in your Telegram account. Cached files on this device are removed.', 'Sign out', true)) { await cache.clearAll().catch(() => {}); await tg.logout(); location.reload() } }
+  $('#logout').onclick = async () => { if (await confirmBox('Sign out?', 'Your files stay safe in your Telegram account. Everything TeleCloud stored on this device is erased.', 'Sign out', true)) { await cache.wipeBrowserStorage({ keepKey: false }).catch(() => {}); await tg.logout(); for (const k of Object.keys(localStorage)) if (k.startsWith('tc.') && !['tc.theme'].includes(k)) localStorage.removeItem(k); location.reload() } }
   bindTransfers()
 
   const c = $('#content'), sc = $('#scroller')
@@ -1434,7 +1618,7 @@ function bind() {
   $('#cachel') && ($('#cachel').onclick = () => go({ view: 'settings' }, 'fwd'))
   c.onclick = (e) => {
     const a = e.target.closest('[data-a]')
-    if (a) { const v = a.dataset.a; if (v === 'upload') { upFrom = centerOf(a); pick() } else if (v === 'newfolder' || v === 'newfolder-root') newFolder(); else if (v === 'restoreall') restoreAll(); else if (v === 'dups') findDups(); else if (v === 'reload') { const t = toast('Refreshing…', 'busy', 0); refresh().finally(() => { t.close(); toast('Up to date'); S.view === 'settings' && settingsView() }) } else if (v === 'empty') { const t = S.items.filter((i) => i.d); t.length && purge(t) } else if (v === 'unlock') unlockFlow(); else if (v === 'e2e') setupE2E().then(() => S.view === 'settings' && settingsView()); else if (v === 'lockv') { E.lock().then(() => { S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file'; S.thumbs.delete(i.id) } }); dropBlobs(); toast('Locked', 'lock'); render() }) } else if (v === 'e2epass') changePass(); else if (v === 'keys') showKeys(); return }
+    if (a) { const v = a.dataset.a; if (v === 'upload') { upFrom = centerOf(a); pick() } else if (v === 'newfolder' || v === 'newfolder-root') newFolder(); else if (v === 'restoreall') restoreAll(); else if (v === 'join') joinFlow(); else if (v === 'newshare') newShareFlow(); else if (v === 'sharecode') shareCodeModal(a.dataset.k || S.space); else if (v === 'members') membersModal(a.dataset.k || S.space); else if (v === 'leave') leaveFlow(a.dataset.k || S.space); else if (v === 'opensh') go({ view: 'drive', path: '/', space: a.dataset.k }, 'fwd'); else if (v === 'dups') findDups(); else if (v === 'reload') { const t = toast('Refreshing…', 'busy', 0); refresh().finally(() => { t.close(); toast('Up to date'); S.view === 'settings' && settingsView() }) } else if (v === 'empty') { const t = S.items.filter((i) => i.d); t.length && purge(t) } else if (v === 'unlock') unlockFlow(); else if (v === 'e2e') setupE2E().then(() => S.view === 'settings' && settingsView()); else if (v === 'lockv') { E.lock().then(() => { S.items.forEach((i) => { if (i.enc) { i.locked = true; i.name = 'Encrypted file'; S.thumbs.delete(i.id) } }); dropBlobs(); toast('Locked', 'lock'); render() }) } else if (v === 'e2epass') changePass(); else if (v === 'keys') showKeys(); return }
     const pz = e.target.closest('[data-pz]'); if (pz) { S.pz = Math.min(8, Math.max(2, S.pz - +pz.dataset.pz)); localStorage.setItem('tc.pz', S.pz); $$('.photos', c).forEach((p) => p.style.setProperty('--cols', pcols())); return }
     const cb = e.target.closest('[data-cat]'); if (cb) { go({ view: 'cat', cat: cb.dataset.cat }, 'fwd'); return }
     if (e.target.closest('[data-occ]')) { (async () => { const l = await cache.list(); if (!(await confirmBox('Delete all cache?', `${fmtSize(l.reduce((a, b) => a + b.size, 0))} saved on this device will be removed. Your cloud files are not deleted.`, 'Delete cache', true))) return; await cache.clearAll(); S.thumbs.forEach((u) => URL.revokeObjectURL(u)); S.thumbs.clear(); dropBlobs(); S.cached.clear(); toast('Cache deleted · your cloud files are untouched'); updateCacheLabel(); render() })(); return }
@@ -1532,21 +1716,31 @@ function bind() {
 async function refresh() {
   S.loading = true
   try {
-    const items = await tg.listAll()
-    S.items = items
+    S.spaces[''] = await tg.listAll()
     if (tg.vault && !E.unlocked()) await E.restore(tg.vault.rec.id)
     await decryptAll()
     await refreshCached()
-    const old = S.items.filter((i) => i.d && Date.now() / 1000 - i.d > 30 * 86400)
-    if (old.length) tg.deleteIds([...old.map((i) => i.id), ...old.map((i) => i.sec && i.sec.th).filter(Boolean)]).then(() => { const ids = new Set(old.map((i) => i.id)); S.items = S.items.filter((i) => !ids.has(i.id)); render() }).catch(() => {})
+    const main = itemsOf('')
+    const old = main.filter((i) => i.d && Date.now() / 1000 - i.d > 30 * 86400)
+    if (old.length) tg.deleteIds([...old.map((i) => i.id), ...old.map((i) => i.sec && i.sec.th).filter(Boolean)]).then(() => { const ids = new Set(old.map((i) => i.id)); S.spaces[''] = itemsOf('').filter((i) => !ids.has(i.id)); render() }).catch(() => {})
+    if (S.space) await loadSpace(S.space, true)
   } catch (e) { toast(errMsg(e), 'red') }
   S.loading = false; S.anim = true; render()
+  loadSharesList()
+}
+async function loadSharesList() { try { await tg.loadShares(); S.sharesOk = true; render() } catch {} }
+async function loadSpace(key, force) {
+  if (S.spaces[key] && !force) return
+  if (!S.spaces[key]) S.spaces[key] = []
+  S.spaceLoading = key; if (S.space === key) render()
+  try { S.spaces[key] = await tg.listAll(null, key) } catch (e) { toast(errMsg(e), 'red') }
+  S.spaceLoading = null; if (S.space === key) { S.anim = true; render() }
 }
 async function start() {
   try {
     await tg.getMe(); await tg.ensureChannel()
     shell(); S.hist = [navState()]; S.hi = 0; history.replaceState({ hi: 0 }, '')
-    render(); cache.enforce().finally(updateCacheLabel); setupSW(); await refresh()
+    render(); cache.enforce().finally(updateCacheLabel); setupSW(); loadAvatar(); checkJoinLink(); liquid(); await refresh()
     let lastSync = Date.now()
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastSync > 90e3 && !S.loading && !S.transfers.some(active) && !document.querySelector('.viewer,.modal-bg')) { lastSync = Date.now(); refresh() } })
   } catch (e) {
@@ -1554,6 +1748,7 @@ async function start() {
   }
 }
 applyTheme()
+{ const m = /[#&]join=([^&]+)/.exec(location.hash); if (m) { sessionStorage.setItem('tc.join', decodeURIComponent(m[1])); history.replaceState(null, '', location.pathname + location.search) } }
 ;(async () => {
   try { const ok = await tg.initClient(); ok ? start() : authScreen() }
   catch (e) { document.body.innerHTML = `${WALL}<div class="empty"><div>${logo(64)}<h3>Couldn't connect</h3><div>${esc(errMsg(e))}</div><div class="btns"><button class="btn primary" onclick="location.reload()">Try again</button></div></div></div>` }

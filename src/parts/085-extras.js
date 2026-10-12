@@ -38,7 +38,7 @@ async function copyItems(items, dest) {
     void base
   }
   for (const p of [...new Set(folders)]) { try { const f = await ensureFolderMsg(p); S.fresh.add(f.id) } catch (e) { toast(errMsg(e), 'red'); return } }
-  const r = await runAll(jobs, async (j) => { const c = await tg.copyItem(j.it, { path: j.path, name: j.name }); S.items.unshift(c); S.fresh.add(c.id); if (S.thumbs.has(j.it.id)) S.thumbs.set(c.id, S.thumbs.get(j.it.id)) }, 'Copying…', 3)
+  const r = await runAll(jobs, async (j) => { const c = await tg.copyItem(j.it, { path: j.path, name: j.name }); itemsOf(c.src).unshift(c); S.fresh.add(c.id); if (S.thumbs.has(j.it.id)) S.thumbs.set(c.id, S.thumbs.get(j.it.id)) }, 'Copying…', 3)
   S.sel.clear(); render()
   if (r.ok || folders.length) toast(`${dup ? 'Duplicated' : 'Copied'} ${items.length} item${items.length > 1 ? 's' : ''}${dup ? '' : ` to ${dest === '/' ? 'Drive' : baseName(dest)}`}`)
 }
@@ -128,7 +128,7 @@ async function editText(it, after) {
     const file = new File([r.text], r.name, { type: it.mime || 'text/plain' })
     const nu = await tg.replaceFile({ ...it, name: r.name }, file)
     await cache.remove([it.id]).catch(() => {}); dropBlobs([it.id]); S.cached.delete(it.id)
-    S.items = S.items.map((x) => (x.id === it.id ? nu : x)); S.fresh.add(nu.id)
+    S.spaces[it.src || ''] = itemsOf(it.src).map((x) => (x.id === it.id ? nu : x)); S.fresh.add(nu.id)
     toast('Saved to your cloud'); after && after(nu)
   })
 }
