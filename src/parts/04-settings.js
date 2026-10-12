@@ -80,7 +80,9 @@ async function settingsView() {
 
     <div class="set-h"><h2>Appearance</h2></div>
     <div class="panel mat rows">
-      <div class="srow"><div><b>Theme</b><span>Match your system, or choose one.</span></div>${segc('theme', [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']], theme)}</div>
+      <div class="srow skrow"><div><b>Theme</b><span>${SKINS.length} looks to choose from. Tap one to try it.</span></div></div>
+      <div class="skins" id="skins">${SKINS.map(([id, nm, md, [w, sd, he, ac, cd, ol]]) => `<button class="skc ${id === skin() ? 'on' : ''}" data-skin="${id}" aria-pressed="${id === skin()}" style="--w:${w};--sd:${sd};--he:${he};--ac:${ac};--cd:${cd};--ol:${ol}"><span class="skp"><i class="p-sd"></i><i class="p-he"><em></em></i><i class="p-c1"></i><i class="p-c2"></i><i class="p-c3"></i></span><span class="skn">${nm}${md === 'dark' ? '<em>Dark</em>' : ''}</span>${id === skin() ? `<span class="skok">${I.check}</span>` : ''}</button>`).join('')}</div>
+      <div class="srow"><div><b>Mode</b><span>${skinOf(skin())[2] === 'dark' ? 'This theme is always dark.' : 'Match your system, or choose light or dark.'}</span></div>${skinOf(skin())[2] === 'dark' ? '<span class="muted">Dark</span>' : segc('theme', [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']], theme)}</div>
       <div class="srow"><div><b>Reduce transparency</b><span>Use solid backgrounds instead of glass.</span></div>${sw('solid', localStorage.getItem('tc.solid') === '1')}</div>
       <div class="srow"><div><b>Reduce motion</b><span>Turn off animations and transitions.</span></div>${sw('still', localStorage.getItem('tc.still') === '1')}</div>
       <div class="srow"><div><b>Keyboard shortcuts</b><span>Space to preview, arrows to move, ⌫ to delete and more.</span></div><button class="btn glassbtn sm" data-a="keys">${I.keyboard} Show</button></div>
@@ -132,17 +134,20 @@ async function settingsView() {
   $('#cpersist', c).onchange = async (e) => { if (e.target.checked) { const ok = await cache.persist(); e.target.checked = ok; toast(ok ? 'Cached files are protected from browser cleanup' : 'Your browser declined — install the app or bookmark it, then try again', ok ? '' : 'red') } else toast('Browsers only allow turning this off by clearing site data', '', 3500) }
   $('#bwipe', c).onclick = () => wipeFlow(est.usage)
   $('#cprev', c).onchange = (e) => cache.setSettings({ prev: e.target.checked })
+  $('#skins', c).onclick = (e) => { const b = e.target.closest('[data-skin]'); if (!b || b.dataset.skin === skin()) return; localStorage.setItem('tc.skin', b.dataset.skin); const y = scrollerY(); themeReveal(e.clientX, e.clientY, () => { settingsView(); scrollerY(y) }) }
   $('#solid', c).onchange = (e) => { localStorage.setItem('tc.solid', e.target.checked ? '1' : '0'); applyTheme() }
   $('#still', c).onchange = (e) => { localStorage.setItem('tc.still', e.target.checked ? '1' : '0'); applyTheme() }
   const ea = $('#e2eauto', c); if (ea) ea.onchange = async (e) => { if (e.target.checked && !E.unlocked()) { e.target.checked = false; if (await unlockFlow()) { localStorage.setItem('tc.e2e', '1'); settingsView() } return } localStorage.setItem('tc.e2e', e.target.checked ? '1' : '0'); toast(e.target.checked ? 'New uploads will be encrypted' : 'New uploads will not be encrypted', 'lock') }
   $('#slogout', c).onclick = () => $('#logout').click()
 }
 /* theme change with a circular reveal */
-function themeReveal(x, y) {
-  if (!document.startViewTransition || RM()) { applyTheme(); return }
+const scrollerY = (y) => { const m = document.getElementById('scroller'); if (!m) return 0; if (y != null) m.scrollTop = y; return m.scrollTop }
+function themeReveal(x, y, after) {
+  const run = () => { applyTheme(); after && after() }
+  if (!document.startViewTransition || RM() || !x) { run(); return }
   document.documentElement.dataset.dir = 'theme'
   const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))
-  const t = document.startViewTransition(() => applyTheme())
+  const t = document.startViewTransition(run)
   t.ready.then(() => document.documentElement.animate({ clipPath: [`circle(0 at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] }, { duration: 520, easing: 'cubic-bezier(.4,0,.2,1)', pseudoElement: '::view-transition-new(root)' })).catch(() => {})
 }
 

@@ -1,4 +1,6 @@
 import './style.css'
+import './skins.css'
+import { SKINS, skinOf, skinArt, DEF_SKIN } from './skins.js'
 import QRCode from 'qrcode'
 import * as tg from './tg.js'
 import * as E from './crypto.js'

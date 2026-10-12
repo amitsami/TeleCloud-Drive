@@ -6,12 +6,14 @@ const NAV2 = [['trash', 'Recently Deleted', I.trash], ['settings', 'Settings', I
 const TITLES = { recents: 'Home', drive: 'My Drive', shared: 'Shared Folders', photos: 'Photos', favorites: 'Favorites', offline: 'On This Device', trash: 'Recently Deleted', settings: 'Settings', search: 'Search', cat: '' }
 const CATV = { photos: ['Photos', I.photo, '#2F9BFF'], videos: ['Videos', I.video, '#9B5CF6'], documents: ['Documents', I.doc, '#FF9F0A'], music: ['Music', I.music, '#FF375F'], other: ['Other', I.box, '#30D158'] }
 const uname = () => [tg.me.firstName, tg.me.lastName].filter(Boolean).join(' ') || tg.me.username || 'You'
+const skin = () => skinOf(localStorage.getItem('tc.skin') || DEF_SKIN)[0]
 function applyTheme() {
-  const t = localStorage.getItem('tc.theme') || 'auto'
-  const dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches)
-  const h = document.documentElement; h.dataset.theme = dark ? 'dark' : 'light'
+  const t = localStorage.getItem('tc.theme') || 'auto', sk = skinOf(localStorage.getItem('tc.skin') || DEF_SKIN)
+  const dark = sk[2] === 'dark' || t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches)
+  const h = document.documentElement; h.dataset.theme = dark ? 'dark' : 'light'; h.dataset.sv = sk[2] === 'dark' ? 'd' : dark ? 'ld' : 'l'
+  if (h.dataset.skin !== sk[0]) { h.dataset.skin = sk[0]; const ss = document.getElementById('skside'); if (ss) ss.innerHTML = skinArt(sk[0], 'side') }
   h.classList.toggle('solid', localStorage.getItem('tc.solid') === '1'); h.classList.toggle('still', localStorage.getItem('tc.still') === '1')
-  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = dark ? '#0b0d12' : '#eef2f9'
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = sk[2] === 'dark' || !dark ? sk[3][0] : '#110F16'
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme)
 
@@ -27,7 +29,7 @@ function shell() {
         <div class="nav-l">Folders</div><nav class="nav" id="sfold"></nav>
         <div class="nav-l">More</div><nav class="nav">${NAV2.map(navBtn).join('')}</nav>
       </div>
-      <div class="side-foot">
+      <div class="side-foot"><div class="sk-side" id="skside" aria-hidden="true">${skinArt(skin(), 'side')}</div>
         <button class="store-card" data-v="settings" data-sv="1">
           <div class="sc-top"><span class="sc-ic">${I.cloud}</span><div><div class="sc-t">Cloud Storage</div><div class="sc-s"><b id="used">0 B</b> used · Unlimited</div></div></div>
           <div class="sc-bar" id="scbar"></div>
@@ -183,13 +185,14 @@ function ring(parts, total, size = 120, stroke = 12) {
 function homeView(vis) {
   const st = catStats(), total = Object.values(st).reduce((a, b) => a + b.size, 0)
   const nf = live().filter((i) => i.kind === 'file').length
-  return `<div class="hero mat">
-      <div class="hero-t"><div class="hello">${greet()}, ${esc(tg.me.firstName || uname())}</div><div class="hsub">${nf ? `You have <b>${nf}</b> file${nf === 1 ? '' : 's'} safely stored in your cloud.` : 'Your cloud is ready. Upload your first file to get started.'}</div>
+  const sk = skin()
+  return `<div class="hero mat"><div class="sk-art" aria-hidden="true">${skinArt(sk, 'hero')}</div>
+      <div class="hero-t"><span class="hr-chip">${I.cloud}${fmtSize(total)} in cloud</span><div class="hello">${greet()}, ${esc(tg.me.firstName || uname())}</div><div class="hsub">${nf ? `You have <b>${nf}</b> file${nf === 1 ? '' : 's'} safely stored in your cloud.` : 'Your cloud is ready. Upload your first file to get started.'}</div>
         <div class="hero-acts"><button class="btn primary" data-a="upload">${I.upload} Upload</button><button class="btn glassbtn" data-a="newfolder-root">${I.folderPlus} New folder</button>${S.items.some((i) => i.enc) || tg.vault ? '' : `<button class="btn glassbtn" data-a="e2e">${I.lock} Turn on encryption</button>`}</div></div>
       <div class="hero-ring">${ring(Object.entries(st).map(([k, v]) => ({ v: v.size, c: CATV[k][2] })), total, 132, 13)}<div class="hr-c"><b>${fmtSize(total)}</b><span>in cloud</span></div></div>
     </div>
     <div class="cats">${Object.entries(CATV).map(([k, [l, ic, col]], i) => `<button class="cat mat" data-cat="${k}" style="--c:${col};--i:${i}"><span class="cat-ic">${ic}</span><span class="cat-n">${l}</span><span class="cat-s">${st[k].n} item${st[k].n === 1 ? '' : 's'} · ${fmtSize(st[k].size)}</span></button>`).join('')}</div>
-    <div class="section-h"><span>Recent</span>${vis.length ? `<button class="link" data-v2="drive">Show all ${I.chevron}</button>` : ''}</div>
+    ${skinArt(sk, 'tip')}<div class="section-h"><span>Recent<span class="sk-sect" aria-hidden="true">${skinArt(sk, 'sect')}</span></span>${vis.length ? `<button class="link" data-v2="drive">Show all ${I.chevron}</button>` : ''}</div>
     ${vis.length ? `<div class="grid">${list(vis.slice(0, 24), true)}</div>` : `<div class="empty sm"><div><div class="empty-ic">${folderIcon(84)}</div><h3>Nothing here yet</h3><div>Drag files anywhere on this page, or tap Upload.</div></div></div>`}
     <div class="quick mobile-only"><button class="mat" data-v2="favorites">${tile(I.star, 38)}<span>Favorites</span>${I.chevron}</button><button class="mat" data-v2="offline">${tile(I.device, 280)}<span>On This Device</span>${I.chevron}</button><button class="mat" data-v2="trash">${tile(I.trash, 4)}<span>Recently Deleted</span>${I.chevron}</button></div>`
 }
